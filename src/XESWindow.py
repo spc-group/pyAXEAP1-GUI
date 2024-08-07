@@ -7,10 +7,13 @@ import axeap.core as core
 
 from ErrorWindow import ErrorWindow
 from LoadingBarWindow import LoadingBarWindow
-from xesFunctions import calcDataForXESSpectra, calcXESSpectra
-from SpectrumClass import Spectrum
+from spectraFunctions import calcDataForSpectra, calcSpectra
+from XESSpectrumClass import Spectrum
 from colourGenerator import colourGen
 from ColourSelectWindow import ColourSelect
+from FileLoad import LoadTifSpectraData
+from ExitDialogWindow import exitDialog
+from BaseWindow import Window
 
 from openpyxl import Workbook as ExWorkbook
 from openpyxl.utils import get_column_letter as getColumnLetter
@@ -18,8 +21,6 @@ from openpyxl.utils import get_column_letter as getColumnLetter
 AlignFlag = QtCore.Qt.AlignmentFlag
 
 import pathlib
-
-desktop_directory = str(pathlib.Path.home() / "Desktop")
 
 
 def handler(msg_type, msg_log, msg_string):
@@ -29,21 +30,23 @@ def handler(msg_type, msg_log, msg_string):
 QtCore.qInstallMessageHandler(handler)
 
 
-class XESWindow(QtWidgets.QMainWindow):
+class XESWindow(Window):
     """Window for viewing XES spectra"""
 
-    def __init__(self, parent: QtWidgets.QMainWindow, *args, **kwargs):
+    def __init__(self, parent: QtWidgets.QMainWindow | None, *args, **kwargs):
         super(XESWindow, self).__init__(*args, **kwargs)
 
         # sets the main window as the parent (as well as window data)
         self.parent = parent
-        self.setWindowTitle("XES Window")
+        self.setWindowTitle("XES")
         self.setFixedSize(960, 590)
 
-        self.xes_button = QtWidgets.QPushButton("XES Data...")
-        self.xes_button.clicked.connect(self.loadXES)
-        self.xes_button.setFixedSize(140, 30)
+        # XES data button
+        load_xes_button = QtWidgets.QPushButton("XES Data...")
+        load_xes_button.clicked.connect(self.loadXES)
+        load_xes_button.setFixedSize(140, 30)
 
+        # Canvas (graph plot)
         self.sc = pg.plot()
         self.sc.setBackground("w")
         label_style = {"color": "#444", "font-size": "14pt"}
@@ -53,8 +56,12 @@ class XESWindow(QtWidgets.QMainWindow):
         )
 
         # Defaults
+        self.no_close_dialog = False
         self.average_spectra = None
         self.emaps = []
+        self.keep_loading = True
+
+        # energy map assignment (if parent has an energy map)
         if self.parent is None:
             self.emap = None
         else:
@@ -125,7 +132,7 @@ class XESWindow(QtWidgets.QMainWindow):
         self.colour_box.addItem("Custom Gradient")
         self.custom_colour_one = QtGui.QColor(0, 0, 0)
         self.custom_colour_two = QtGui.QColor(255, 255, 255)
-        self.colour_box.setCurrentIndex(8)
+        self.colour_box.setCurrentIndex(3)
 
         # Set custom colours button
         self.custom_col_button = QtWidgets.QPushButton("Set Custom Colours")
@@ -138,7 +145,7 @@ class XESWindow(QtWidgets.QMainWindow):
         self.stack_type_box.addItem("Stacked (no spacing)")
         self.stack_type_box.addItem("Spaced")
         self.stack_type_box.addItem("Average of Spectra")
-        self.stack_type_box.setCurrentIndex(0)
+        self.stack_type_box.setCurrentIndex(1)
 
         # Refresh button
         self.refresh_button = QtWidgets.QPushButton("Refresh")
@@ -150,7 +157,7 @@ class XESWindow(QtWidgets.QMainWindow):
         widget = QtWidgets.QWidget()
         self.mlayout = QtWidgets.QGridLayout(widget)
         self.mlayout.addWidget(self.sc, 2, 2, 1, 2, AlignFlag.AlignCenter)
-        self.mlayout.addWidget(self.xes_button, 0, 0, AlignFlag.AlignLeft)
+        self.mlayout.addWidget(load_xes_button, 0, 0, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.colour_box, 0, 1, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.custom_col_button, 0, 2, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.emap_combo, 0, 3, AlignFlag.AlignRight)
@@ -164,23 +171,16 @@ class XESWindow(QtWidgets.QMainWindow):
         self.show()
 
     def closeEvent(self, event):
-        super().closeEvent(event)
-        self.deleteLater()
-        self.parent.childWindow = None
-
-    def loadEmap(self):
-        text = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Open Energy Map",
-            directory=str(desktop_directory),
-            filter="Numpy Array (*.npy)",
-        )
-        if not len(text[0]):
-            return
-        emap = core.EnergyMap.loadFromPath(text[0])
-        if emap.name not in (e.name for e in self.emaps):
-            self.emaps.append(emap)
-            self.emap_combo.addItem(emap.name)
+        # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
+        if not self.no_close_dialog:
+            confirm = exitDialog(self)
+            if confirm:
+                self.parent.childWindow = None
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
     # loads XES data (currently only able to load from TIF files)
     def loadXES(self):
@@ -193,11 +193,10 @@ class XESWindow(QtWidgets.QMainWindow):
                 self.error = ErrorWindow("XESemap")
                 return
 
-        self.filenames = QtWidgets.QFileDialog.getOpenFileNames(
-            filter="TIF Files (*.tif *.tiff)"
-        )
-        if self.filenames is None or len(self.filenames[0]) == 0:
+        self.filenames = LoadTifSpectraData.fileDialog(self)
+        if not self.filenames:
             return
+
         self.checks = QtWidgets.QScrollArea()
         self.checks.setMinimumWidth(280)
         self.check_widgets = QtWidgets.QWidget()
@@ -205,15 +204,23 @@ class XESWindow(QtWidgets.QMainWindow):
 
         emap = self.emap
         # gets all XES spectra.
-        LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames[0]))
+        LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames))
+        LoadWindow.canceled.connect(self.stopLoadXES)
         scanset = []
-        data = calcDataForXESSpectra(emap)
-        for i in self.filenames[0]:
-            scanset.append(calcXESSpectra(i, emap, data))
+        data = calcDataForSpectra(emap)
+        for i in self.filenames:
+            if not self.keep_loading:
+                break
+            scanset.append(calcSpectra(i, emap, data))
             LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
-        # scanset = calcXESSpectra(self.filenames[0], emap)
+
+        if not self.keep_loading:
+            self.keep_loading = True
+            return
+
+        # scanset = calcXESSpectra(self.filenames, emap)
         scanlen = len(scanset)
         colour_index = self.colour_box.currentIndex()
         if colour_index == 9:
@@ -257,6 +264,9 @@ class XESWindow(QtWidgets.QMainWindow):
         self.save_avg_button.setDisabled(False)
 
         self.refreshSpectra()
+
+    def stopLoadXES(self):
+        self.keep_loading = False
 
     def setCustomColours(self):
         self.ColourSelects = ColourSelect(

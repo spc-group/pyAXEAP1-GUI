@@ -1,4 +1,5 @@
 import numpy as np
+from math import sqrt
 
 rainbow = (
     (255, 0, 0),  # red
@@ -8,7 +9,7 @@ rainbow = (
     (0, 130, 255),  # cyan
     (0, 0, 255),  # blue
     (130, 0, 255),  # purple(ish)
-    (240, 0, 240),  # also purple(ish)
+    (240, 0, 240),  # also purple(ish) (more pink)
 )
 
 
@@ -33,6 +34,7 @@ def colourGen(
             "Green Gradient (inverted)", "Blue Gradient", "Blue Gradient (inverted)",
             "Black-White Gradient", "Black-White (inverted), "Rainbow".
         Accepted integers: 0 through 8.
+        NOTE: set to None if using custom colours.
         If set to None, colours given in 'colours' will be used.
     colours: :obj:`tuple` (optional)
         Takes RGB colours ((#red1, #green1, #blue1), (#red2, #green2, #blue2),...)
@@ -43,6 +45,7 @@ def colourGen(
     gradient: :obj:`bool` (optional)
         If True, will create a gradient from 'colours'.
         NOTE: Does not work if 'colour_type' is set. Only works with 'colours'.
+        WARNING: Only a gradient of two colours is currently configured.
 
     Returns
     -------
@@ -159,3 +162,33 @@ def colourGen(
                 )
 
     return colour_array
+
+
+def contourMap(num: int):
+    """
+    Generates a simple contour map.
+    NOTE: Currently only makes a map of 10 colours and ignores 'num'.
+
+    Parameters
+    ----------
+    num: :obj:`int`
+        Number of colours for map.
+
+    Returns
+    -------
+    :obj:`tuple` of colours, in RGB values."""
+
+    colours = (
+        (0, 0, 0),
+        (10, 10, 60),
+        (10, 10, 200),
+        (20, 20, 255),
+        (60, 60, 255),
+        (0, 255, 60),
+        (0, 255, 0),
+        (240, 240, 0),
+        (255, 50, 50),
+        (255, 0, 0),
+    )
+
+    return colours

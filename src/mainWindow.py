@@ -5,18 +5,18 @@ import sys
 
 from axeap.core.roi import HROI
 import pathlib
-from openpyxl import load_workbook
 import numpy as np
 
 from LoadingBarWindow import LoadingBarWindow
 from ApproxWindow import ApproxWindow
 from ErrorWindow import ErrorWindow
-from GetPoints import GetPoints
 from XESWindow import XESWindow
 from RXESWindow import RXESWindow
-from calibFunctions import loadCalib, calcEnergyMap, approximateROIs, getCoordsFromScans
+from calibFunctions import calcEnergyMap, approximateROIs, getCoordsFromScans
 from CalibFileClass import CalibFile
 from SettingsWindow import SettingsWindow
+from FileLoad import LoadCalibData, LoadInfoData
+from ExitDialogWindow import exitDialog
 
 
 from PyQt6 import QtCore, QtWidgets, QtGui
@@ -156,6 +156,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(mwidget)
         self.show()
 
+    def closeEvent(self, event):
+        # this dialog box should always show up
+        confirm = exitDialog(self)
+        if confirm:
+            if self.childWindow is not None:
+                # closes the child window without a dialog box
+                self.childWindow.no_close_dialog = True
+                self.childWindow.close()
+            self.deleteLater()
+            event.accept()
+        else:
+            event.ignore()
+
     def getSettings(self):
         with open("settings.ini", "r") as s:
             lines = s.readlines()
@@ -182,47 +195,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.SettingsWindow = SettingsWindow(self, settings)
 
-    def closeEvent(self, event):
-        super().closeEvent(event)
-        if self.childWindow is not None:
-            self.childWindow.close()
-        self.deleteLater()
-
     def openPath(self):
-        self.calibfiledir = QtWidgets.QFileDialog.getOpenFileNames(
-            parent=self, directory=desktop_directory, filter="TIF Files (*.tif *.tiff)"
-        )
+        self.calibfiledir = LoadCalibData.fileDialog(self)
 
-        if self.calibfiledir[0] != [] and self.calibfiledir[1] != "":
-            self.calibscans = loadCalib(self.calibfiledir[0])
+        if self.calibfiledir is not None:
+            self.calibscans = LoadCalibData.loadData(self.calibfiledir)
             self.getCalibSpectra(True)
 
     def loadInfoFile(self):
-        old = self.info_file
-        self.info_file = QtWidgets.QFileDialog.getOpenFileName(
-            parent=self, directory=desktop_directory
-        )
-        if self.info_file[0][-5:] == ".xlsx":
-            wb = load_workbook(self.info_file[0], read_only=True)
-            ws = wb.worksheets[0]
-            for i, scan in enumerate(self.calibscans.items):
-                line = ws.cell(i + 1, 1).value
-                scan.meta["IncidentEnergy"] = line
-                self.calib_energies[i].changeVal(line)
-            wb.close()
-
-        elif self.info_file[1] != "":
-            try:
-                self.calibscans.addCalibRunInfo(core.CalibRunInfo(self.info_file[0]))
-                for i, e in enumerate(self.calib_energies):
-                    e.changeVal(self.calibscans.items[i].meta["IncidentEnergy"])
-
-            except Exception or Warning:
-                self.info_file = old
-                self.error = ErrorWindow("badInfoFile")
-                return
-        else:
-            self.info_file = old
+        directory = LoadInfoData.fileDialog(self)
+        self.info_file = LoadInfoData.loadData(self, directory)
 
     def getCalibSpectra(self, runinit: bool):
         minc = self.mincuts.value()
@@ -250,15 +232,30 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.calib_grid_scroll is not None:
             self.mlayout.removeWidget(self.calib_grid_scroll)
         self.calib_grid_scroll = QtWidgets.QScrollArea()
+        self.calib_grid_scroll.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.calib_widget = QtWidgets.QWidget()
         self.calib_grid = QtWidgets.QGridLayout(self.calib_widget)
-        self.calib_grid.addWidget(
-            QtWidgets.QLabel("File Name"), 0, 0, AlignFlag.AlignLeft
-        )
-        self.calib_grid.addWidget(QtWidgets.QLabel("Energy"), 0, 1, AlignFlag.AlignLeft)
+        self.calib_grid.setColumnMinimumWidth(1, 10)
+
+        filename = QtWidgets.QLabel("File Name")
+        font = filename.font()
+        font.setUnderline(True)
+        filename.setFont(font)
+        self.calib_grid.addWidget(filename, 0, 0, AlignFlag.AlignLeft)
+        del font, filename
+
+        energy = QtWidgets.QLabel("Energy")
+        font = energy.font()
+        font.setUnderline(True)
+        energy.setFont(font)
+        self.calib_grid.addWidget(energy, 0, 2, AlignFlag.AlignLeft)
+        del font, energy
+
         self.calib_energies = [
-            CalibFile(self, self.calibfiledir[0][i], i + 1)
-            for i, _ in enumerate(self.calibfiledir[0])
+            CalibFile(self, self.calibfiledir[i], i + 1)
+            for i, _ in enumerate(self.calibfiledir)
         ]
         self.calib_grid_scroll.setWidget(self.calib_widget)
         self.calib_grid_scroll.setFixedWidth(290)
@@ -418,17 +415,34 @@ class MainWindow(QtWidgets.QMainWindow):
         if not len(text[0]):
             return
         self.emap = core.EnergyMap.loadFromPath(text[0])
+        self.emap_save_button.setDisabled(False)
         self.drawEmap()
 
     def runXES(self):
-        if self.childWindow is not None:
-            self.childWindow.close()
-        self.childWindow = XESWindow(self)
+        if type(self.childWindow) is XESWindow:
+            self.childWindow.activateWindow()
+        elif type(self.childWindow) is RXESWindow:
+            self.childWindow.activateWindow()
+            run = exitDialog(self.childWindow)
+            if run:
+                self.childWindow = XESWindow(self)
+        elif self.childWindow is None:
+            self.childWindow = XESWindow(self)
+        else:
+            self.error = ErrorWindow()
 
     def runRXES(self):
-        if self.childWindow is not None:
-            self.childWindow.close()
-        self.childWindow = RXESWindow(self)
+        if type(self.childWindow) is RXESWindow:
+            self.childWindow.activateWindow()
+        elif type(self.childWindow) is XESWindow:
+            self.childWindow.activateWindow()
+            run = exitDialog(self.childWindow)
+            if run:
+                self.childWindow = RXESWindow(self)
+        elif self.childWindow is None:
+            self.childWindow = RXESWindow(self)
+        else:
+            self.error = ErrorWindow()
 
 
 if __name__ == "__main__":

@@ -19,9 +19,9 @@ class CalibFile:
         self.val = cSpinBox()
         self.val.setMaximum(1000000)
         self.val.setDecimals(4)
-        self.val.setMinimumWidth(160)
+        self.val.setMinimumWidth(140)
         self.parent.calib_grid.addWidget(self.label, row, 0, AlignFlag.AlignLeft)
-        self.parent.calib_grid.addWidget(self.val, row, 1, AlignFlag.AlignLeft)
+        self.parent.calib_grid.addWidget(self.val, row, 2, AlignFlag.AlignLeft)
 
     def changeVal(self, val):
         self.val.setValue(val)

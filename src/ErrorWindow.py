@@ -29,6 +29,8 @@ class ErrorWindow(QtWidgets.QDialog):
             labeltext = (
                 "No spectra are selected. Select spectra to calculate the average."
             )
+        elif error == "invalidEmIncRXES":
+            labeltext = "No Emission or no Incident energy selected."
         else:
             labeltext = "Unknown Error Occurred."
 
