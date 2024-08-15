@@ -1,4 +1,5 @@
 # :author: Alexander Berno
+"""XES Window"""
 
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
@@ -59,7 +60,6 @@ class XESWindow(Window):
         self.no_close_dialog = False
         self.average_spectra = None
         self.emaps = []
-        self.keep_loading = True
 
         # energy map assignment (if parent has an energy map)
         if self.parent is None:
@@ -197,28 +197,26 @@ class XESWindow(Window):
         if not self.filenames:
             return
 
-        self.checks = QtWidgets.QScrollArea()
-        self.checks.setMinimumWidth(280)
-        self.check_widgets = QtWidgets.QWidget()
-        self.checks_grid = QtWidgets.QGridLayout(self.check_widgets)
-
         emap = self.emap
         # gets all XES spectra.
         LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames))
-        LoadWindow.canceled.connect(self.stopLoadXES)
         scanset = []
         data = calcDataForSpectra(emap)
         for i in self.filenames:
-            if not self.keep_loading:
+            if LoadWindow.wasCanceled():
                 break
             scanset.append(calcSpectra(i, emap, data))
             LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
 
-        if not self.keep_loading:
-            self.keep_loading = True
+        if LoadWindow.wasCanceled():
             return
+
+        self.checks = QtWidgets.QScrollArea()
+        self.checks.setMinimumWidth(280)
+        self.check_widgets = QtWidgets.QWidget()
+        self.checks_grid = QtWidgets.QGridLayout(self.check_widgets)
 
         # scanset = calcXESSpectra(self.filenames, emap)
         scanlen = len(scanset)
@@ -264,9 +262,6 @@ class XESWindow(Window):
         self.save_avg_button.setDisabled(False)
 
         self.refreshSpectra()
-
-    def stopLoadXES(self):
-        self.keep_loading = False
 
     def setCustomColours(self):
         self.ColourSelects = ColourSelect(

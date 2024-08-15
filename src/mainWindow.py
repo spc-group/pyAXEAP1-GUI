@@ -1,4 +1,5 @@
 # :author: Alexander Berno
+"""Main Window"""
 
 import axeap.core as core
 import sys
@@ -12,16 +13,16 @@ from ApproxWindow import ApproxWindow
 from ErrorWindow import ErrorWindow
 from XESWindow import XESWindow
 from RXESWindow import RXESWindow
-from calibFunctions import calcEnergyMap, approximateROIs, getCoordsFromScans
+from calibFunctions import approximateROIs, getCoordsFromScans, calcEnergyMap
 from CalibFileClass import CalibFile
 from SettingsWindow import SettingsWindow
 from FileLoad import LoadCalibData, LoadInfoData
 from ExitDialogWindow import exitDialog
 
-
 from PyQt6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 
+np.seterr(all="ignore")
 
 # Alignment flags are used to place items in a window.
 AlignFlag = QtCore.Qt.AlignmentFlag
@@ -52,10 +53,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.info_file = None
         self.emap_img = None
         self.calib_grid_scroll = None
+        self.points = []
+
+        # get settings from settings file, or load defaults
+        settings = self.getSettings()
+        if settings is None:
+            settings = self.getDefaultSettings()
+
+        SettingsWindow.saveSettings(None, settings)
 
         self.setWindowTitle("pyAXEAP1")
         self.setFixedSize(960, 574)
 
+        # Main scatter plot grid
         self.sc = pg.plot()
         self.sc.setBackground("w")
         self.ax = pg.ScatterPlotItem()
@@ -81,12 +91,6 @@ class MainWindow(QtWidgets.QMainWindow):
         emap_load_button.setFixedSize(120, 30)
         emap_load_button.clicked.connect(self.loadEmap)
 
-        # get settings from settings file, or load defaults
-        try:
-            settings = self.getSettings()
-        except Exception:
-            settings = self.getDefaultSettings()
-
         # settings button
         set_button = QtWidgets.QPushButton("Settings")
         set_button.clicked.connect(lambda: self.openSettings(settings))
@@ -98,6 +102,7 @@ class MainWindow(QtWidgets.QMainWindow):
         emap_widget = QtWidgets.QWidget()
         emap_grid = QtWidgets.QGridLayout(emap_widget)
 
+        # minimum and maximum cut boxes and labels
         mincuts_label = QtWidgets.QLabel("Minimum Cuts")
         self.mincuts = QtWidgets.QSpinBox()
         self.mincuts.setMinimumSize(128, 20)
@@ -108,23 +113,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self.maxcuts.setMinimumSize(128, 20)
         self.maxcuts.setMaximum(10000000)
         self.maxcuts.setValue(int(settings["default_max_cuts"]))
+
+        # Refresh (reload) button
         self.reload_calib = QtWidgets.QPushButton("Refresh")
-        self.reload_calib.clicked.connect(lambda: self.getCalibSpectra(False))
+        self.reload_calib.clicked.connect(lambda: self.getCalibPoints(False))
         self.reload_calib.setDisabled(True)
+
+        # Set ROIs button
         self.approx_rois = QtWidgets.QPushButton("Set ROIs Automatically")
         self.approx_rois.setDisabled(True)
         self.approx_rois.clicked.connect(self.approxROIs)
+
+        # Load info file button
         self.load_info_file_button = QtWidgets.QPushButton("Load Information File")
         self.load_info_file_button.setDisabled(True)
         self.load_info_file_button.clicked.connect(self.loadInfoFile)
+
+        # calibrate button
         self.emap_calc_button = QtWidgets.QPushButton("Caibrate")
         self.emap_calc_button.clicked.connect(self.calcEmap)
         self.emap_calc_button.setDisabled(True)
+
+        # save energy map button
         self.emap_save_button = QtWidgets.QPushButton("Save Energy Map As...")
         self.emap_save_button.clicked.connect(self.saveEmap)
         self.emap_save_button.setDisabled(True)
 
-        # energy map layout connections
+        # Add ROIs button
+        self.add_roi = QtWidgets.QPushButton("Add ROI")
+        self.add_roi.setDisabled(True)
+        self.add_roi.clicked.connect(self.manualAddROI)
+
+        # energy map grid layout connections (adding buttons etc.)
         emap_grid.addWidget(mincuts_label, 0, 0)
         emap_grid.addWidget(self.mincuts, 0, 1)
         emap_grid.addWidget(maxcuts_label, 1, 0)
@@ -132,6 +152,7 @@ class MainWindow(QtWidgets.QMainWindow):
         emap_grid.addWidget(self.load_info_file_button, 2, 0)
         emap_grid.addWidget(self.reload_calib, 2, 1)
         emap_grid.addWidget(self.approx_rois, 3, 0)
+        emap_grid.addWidget(self.add_roi, 3, 1)
         emap_grid.addWidget(self.emap_calc_button, 4, 0)
         emap_grid.addWidget(self.emap_save_button, 4, 1)
         emap_area.setWidget(emap_widget)
@@ -156,6 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(mwidget)
         self.show()
 
+    # occurs when window is closed
     def closeEvent(self, event):
         # this dialog box should always show up
         confirm = exitDialog(self)
@@ -169,10 +191,14 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             event.ignore()
 
+    # gets setting values from settings file
     def getSettings(self):
-        with open("settings.ini", "r") as s:
-            lines = s.readlines()
-            s.close()
+        try:
+            with open("settings.ini", "r") as s:
+                lines = s.readlines()
+                s.close()
+        except Exception:
+            return
         settings = {}
         for line in lines:
             if not len(line) or line[0] == "#":
@@ -180,12 +206,18 @@ class MainWindow(QtWidgets.QMainWindow):
             if "\n" in line:
                 line = line[: line.find("\n")]
             settings[line[: line.find(" =")]] = line[line.find("= ") + 2 :]
+        defaults = self.getDefaultSettings()
+        for setting in defaults:
+            if setting not in settings:
+                settings[setting] = defaults[setting]
         return settings
 
+    # gets the default values for the settings (for when settings file is missing, or resetting)
     def getDefaultSettings(self):
         settings = {"default_min_cuts": "3", "default_max_cuts": "10000"}
         return settings
 
+    # gets settings if not given, and then opens settings window
     def openSettings(self, settings: dict | None = None):
         if settings is None:
             try:
@@ -195,18 +227,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.SettingsWindow = SettingsWindow(self, settings)
 
+    # opens calibration file dialog window, then loads data
     def openPath(self):
         self.calibfiledir = LoadCalibData.fileDialog(self)
 
         if self.calibfiledir is not None:
             self.calibscans = LoadCalibData.loadData(self.calibfiledir)
-            self.getCalibSpectra(True)
+            self.getCalibPoints(True)
 
+    # loads information file
     def loadInfoFile(self):
         directory = LoadInfoData.fileDialog(self)
         self.info_file = LoadInfoData.loadData(self, directory)
 
-    def getCalibSpectra(self, runinit: bool):
+    # gets points from calibration scans
+    def getCalibPoints(self, runinit: bool = False):
         minc = self.mincuts.value()
         maxc = self.maxcuts.value()
         if minc > maxc:
@@ -215,20 +250,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.LoadWindow = LoadingBarWindow(
             "Loading calibration data...", len(self.calibscans)
         )
+        old_points = self.points
         self.points = []
         for i in self.calibscans:
+            if self.LoadWindow.wasCanceled():
+                self.points = old_points
+                return
             self.points.append(getCoordsFromScans(i, reorder=True, cuts=(minc, maxc)))
             self.LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         if runinit:
-            self.initDrawCalibSpectra()
+            self.initDrawCalibPoints()
         else:
-            self.drawCalibSpectra()
+            self.drawCalibPoints()
 
-    def initDrawCalibSpectra(self):
+    # runs drawCalibPoints and places file names next to energy input boxes
+    def initDrawCalibPoints(self):
 
-        self.drawCalibSpectra()
+        self.drawCalibPoints()
 
+        # creates a new scrollable area
         if self.calib_grid_scroll is not None:
             self.mlayout.removeWidget(self.calib_grid_scroll)
         self.calib_grid_scroll = QtWidgets.QScrollArea()
@@ -239,6 +280,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.calib_grid = QtWidgets.QGridLayout(self.calib_widget)
         self.calib_grid.setColumnMinimumWidth(1, 10)
 
+        # adds a File Name label above file names
         filename = QtWidgets.QLabel("File Name")
         font = filename.font()
         font.setUnderline(True)
@@ -246,6 +288,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.calib_grid.addWidget(filename, 0, 0, AlignFlag.AlignLeft)
         del font, filename
 
+        # adds an Energy label above energies
         energy = QtWidgets.QLabel("Energy")
         font = energy.font()
         font.setUnderline(True)
@@ -253,21 +296,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.calib_grid.addWidget(energy, 0, 2, AlignFlag.AlignLeft)
         del font, energy
 
+        # stores energies for calib files, allows for easy changing
         self.calib_energies = [
             CalibFile(self, self.calibfiledir[i], i + 1)
             for i, _ in enumerate(self.calibfiledir)
         ]
+
+        # adds scrollable area to the main window
         self.calib_grid_scroll.setWidget(self.calib_widget)
         self.calib_grid_scroll.setFixedWidth(290)
         self.mlayout.addWidget(self.calib_grid_scroll, 3, 0, 1, 2, AlignFlag.AlignLeft)
 
-    def drawCalibSpectra(self):
+    # draws calibration points to the main scatter plot grid
+    def drawCalibPoints(self):
 
+        # deletes existing scatter plot grid
         if self.ax is not None:
             self.ax.clear()
         else:
             self.ax = pg.ScatterPlotItem()
 
+        # removes old scatter plot and old ROIs, if any exist
         self.rects = []
         for item in self.sc.items():
             self.sc.removeItem(item)
@@ -277,21 +326,58 @@ class MainWindow(QtWidgets.QMainWindow):
         for i in self.points:
             self.ax.addPoints(i[0], i[1], size=1, brush=(0, 0, 0, 255))
 
+        # enables buttons
         self.drawn_calib = True
         self.reload_calib.setDisabled(False)
         self.approx_rois.setDisabled(False)
+        self.add_roi.setDisabled(False)
+        if self.add_roi.text() == "Cancel":
+            self.add_roi.setText("Add ROI")
         self.load_info_file_button.setDisabled(False)
 
+    # manually add an ROI
+    def manualAddROI(self):
+        self.emap_calc_button.setDisabled(False)
+        xy = self.sc.visibleRange()
+        x = xy.center().x()
+        y = xy.center().y()
+        w = xy.width() / 8
+        h = xy.height() / 6
+        rect = pg.RectROI(
+            pos=(x - w / 2, y - h / 2),
+            size=(w, h),
+            pen=(255, 0, 0, 255),
+            hoverPen=(255, 20, 20, 255),
+            handlePen=(255, 0, 0, 255),
+            handleHoverPen=(255, 0, 0, 255),
+            resizable=True,
+            removable=True,
+        )
+        rect.sigRemoveRequested.connect(self.removeROI)
+        rect.addScaleHandle(pos=(0, 0), center=(1, 1))
+        rect.addScaleHandle(pos=(0, 1), center=(1, 0))
+        rect.addScaleHandle(pos=(1, 0), center=(0, 1))
+        rect.addScaleHandle(pos=(0, 0.5), center=(1, 0.5))
+        rect.addScaleHandle(pos=(1, 0.5), center=(0, 0.5))
+        rect.addScaleHandle(pos=(0.5, 0), center=(0.5, 1))
+        rect.addScaleHandle(pos=(0.5, 1), center=(0.5, 0))
+
+        self.sc.addItem(rect)
+        self.rects.append(rect)
+
+    # asks for number of ROIs (see doApproxROIs)
     def approxROIs(self):
         self.ApproxWindow = ApproxWindow(self)
         self.ApproxWindow.finished.connect(self.doApproxROIs)
 
+    # This is what approximates the ROIs
     def doApproxROIs(self):
         if self.ApproxWindow.value is None:
             return
 
         self.emap_calc_button.setDisabled(False)
 
+        # approximates ROIs
         numcrystals = self.ApproxWindow.value
         lencalibs = len(self.calibscans.items)
         hrois, vrois = approximateROIs(
@@ -302,8 +388,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.points,
         )
 
-        self.drawCalibSpectra()
+        # points are redrawn to clear old ROIs, etc. Takes virtually no time.
+        self.drawCalibPoints()
 
+        # creates rectangles and stores them
         self.rects = []
         for i, h in enumerate(hrois):
             v = vrois[i]
@@ -317,6 +405,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 resizable=True,
                 removable=True,
             )
+            # adds corner and edge moveability
             rect.sigRemoveRequested.connect(self.removeROI)
             rect.addScaleHandle(pos=(0, 0), center=(1, 1))
             rect.addScaleHandle(pos=(0, 1), center=(1, 0))
@@ -329,10 +418,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sc.addItem(rect)
             self.rects.append(rect)
 
+    # Removes ROI
     def removeROI(self, event):
         self.rects.remove(event)
         self.sc.removeItem(event)
+        if not len(self.rects):
+            self.emap_calc_button.setDisabled(True)
 
+    # Calculates (makes) HROIs from rectangles.
     def calcHrois(self):
         # this section calculates the hrois
         self.hrois = []
@@ -342,10 +435,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.hrois.append(HROI(x, x + w))
         # print("done")
 
+    # Calculates (makes) ROIs from rectangles.
+    def calcRois(self, dtype: str = "coords"):
+        """dtype accepts 'coords' or 'xywh'"""
+        rois = []
+        for i in self.rects:
+            x = i.pos()[0]
+            w = i.size()[0]
+            y = i.pos()[1]
+            h = i.size()[1]
+            if dtype == "coords":
+                rois.append((x, y, x + w, y + h))
+            elif dtype == "xywh":
+                rois.append((x, y, w, h))
+        return rois
+
+    # organizes data and then calculates an energy map
     def calcEmap(self):
+        # stops if any energy value is not given
         if self.info_file is None and any(e.getVal() == 0 for e in self.calib_energies):
             self.error = ErrorWindow("noInfo")
             return
+
+        # tries to set all energies
         try:
             scans = self.calibscans.items
             for i, s in enumerate(scans):
@@ -353,6 +465,8 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             self.error = ErrorWindow("emapCalib")
             return
+
+        # creates a dataset without the files that have no datapoints
         points = self.points.copy()
         indexes = []
         for i, _ in enumerate(scans):
@@ -364,17 +478,22 @@ class MainWindow(QtWidgets.QMainWindow):
         del indexes
         scans = core.ScanSet(scans)
         self.approx_rois.setDisabled(True)
+        self.add_roi.setDisabled(True)
         self.load_info_file_button.setDisabled(True)
         # self.emap_select_button.setDisabled(True)
         self.emap_calc_button.setDisabled(True)
         self.emap_save_button.setDisabled(False)
-        self.calcHrois()
-        try:
-            self.emap = core.calcEMap(self.calibscans, self.hrois)
-        except Exception:
-            self.emap = calcEnergyMap(scans, points, self.hrois)
-        self.drawEmap()
 
+        # gets the HROIs from the rectangles
+        self.calcHrois()
+
+        # tries multiple energy map calculation methods
+        rois = self.calcRois()
+        self.emap = calcEnergyMap(scans, points, rois)
+
+        self.drawEmap()  # draws the final energy map
+
+    # draws the energy map to the main grid
     def drawEmap(self):
         if self.ax is None:
             self.ax = pg.ScatterPlotItem()
@@ -384,10 +503,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if self.emap_img is not None:
             self.sc.removeItem(self.emap_img)
-        self.sc.setBackground("k")
-        self.emap_img = pg.ImageItem(np.log(self.emap.values))
+        self.sc.setBackground("k")  # 'k' is black ('b' is blue)
+        self.emap_img = pg.ImageItem(np.log(self.emap.values))  # raises warning
         self.sc.addItem(self.emap_img)
 
+    # Saves the energy map to a numpy file for easy future usage
     def saveEmap(self):
         if self.emap is None:
             return
@@ -404,6 +524,7 @@ class MainWindow(QtWidgets.QMainWindow):
         name = dir[dir.rfind("/") + 1 :]
         self.emap.name = name[: name.rfind(".")]
 
+    # loads an energy map from a numpy file, as created above
     def loadEmap(self):
 
         text = QtWidgets.QFileDialog.getOpenFileName(
@@ -418,6 +539,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.emap_save_button.setDisabled(False)
         self.drawEmap()
 
+    # manages the creation of an XES window
     def runXES(self):
         if type(self.childWindow) is XESWindow:
             self.childWindow.activateWindow()
@@ -431,6 +553,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.error = ErrorWindow()
 
+    # manages the creation of an RXES window
     def runRXES(self):
         if type(self.childWindow) is RXESWindow:
             self.childWindow.activateWindow()

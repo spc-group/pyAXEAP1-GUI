@@ -15,7 +15,12 @@ class CalibFile:
         self.name = name
         self.parent = parent
 
-        self.label = QtWidgets.QLabel(self.name[self.name.rfind("/") + 1 :])
+        self.name = self.name[self.name.rfind("/") + 1 :]
+        if len(self.name) > 16:
+            text = self.name[:16] + "..."
+        else:
+            text = self.name
+        self.label = QtWidgets.QLabel(text)
         self.val = cSpinBox()
         self.val.setMaximum(1000000)
         self.val.setDecimals(4)

@@ -1,9 +1,8 @@
 # :author: Alexander Berno
 
-"""
-File Loading classes.
+"""File Loading classes.
 
-Includes base LoadFile class and subclasses.
+Includes base LoadFile class and all subclasses.
 
 Each class has a fileDialog function and a loadData function.
 fileDialog uses Qt dialog windows to get file names.
@@ -53,7 +52,7 @@ class LoadInfoData(LoadFile):
         )
         return info_file
 
-    def loadData(directory: str, parent: any):
+    def loadData(parent: any, directory: str):
         old = parent.info_file
         scans = parent.calibscans
         energies = parent.calib_energies

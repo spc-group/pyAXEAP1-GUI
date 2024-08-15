@@ -1,4 +1,5 @@
 # :author: Alexander Berno
+"""RXES Window"""
 
 from ExitDialogWindow import exitDialog
 from RXESSpectrumClass import Spectrum
@@ -59,10 +60,11 @@ class RXESWindow(Window):
 
         # Default Values
         self.setWindowTitle("RXES (RIXS)")
+        self.setFixedSize(780, 720)
         self.no_close_dialog = False
         self.parent = parent
         self.emaps = []
-        self.keep_loading = True
+        self.map_type = "pcolor"
 
         # energy map assignment (if parent has an energy map)
         if self.parent is None:
@@ -158,16 +160,19 @@ class RXESWindow(Window):
 
         self.show()
 
+    # Sets labels and view angle for 3D graph
     def fixax3d(self):
         self.ax3d.set_xlabel("Incident")
         self.ax3d.set_ylabel("Emission")
         # self.ax3d.set_zlabel("Intensity")
         self.ax3d.view_init(25, 225, 0)
 
+    # Sets labels for contour map
     def fixax2d(self):
         self.ax2d.set_xlabel("Incident")
         self.ax2d.set_ylabel("Emission")
 
+    # runs when the window is closed
     def closeEvent(self, event):
         # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
         if not self.no_close_dialog:
@@ -180,6 +185,7 @@ class RXESWindow(Window):
         else:
             event.accept()
 
+    # Main function for loading RXES data
     def loadRXES(self):
         if len(self.emaps):
             self.emap = self.emaps[self.emap_combo.currentIndex()]
@@ -198,19 +204,17 @@ class RXESWindow(Window):
         LoadWindow = LoadingBarWindow(
             "Loading RXES (RIXS) data...", len(self.filenames)
         )
-        LoadWindow.canceled.connect(self.stopLoadRXES)
         scanset = []
         data = calcDataForSpectra(emap)
         for i in self.filenames:
-            if not self.keep_loading:
+            if LoadWindow.wasCanceled():
                 break
             scanset.append(calcSpectra(i, emap, data))
             LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
 
-        if not self.keep_loading:
-            self.keep_loading = True
+        if LoadWindow.wasCanceled():
             return
 
         self.spectra = [Spectrum(self, s, i) for i, s in enumerate(scanset)]
@@ -218,9 +222,7 @@ class RXESWindow(Window):
         self.graph3dSpectra()
         self.graph2dSpectra()
 
-    def stopLoadRXES(self):
-        self.keep_loading = False
-
+    # This is the 3d graph
     def graph3dSpectra(self):
         self.ax3d.clear()
         self.fixax3d()
@@ -229,7 +231,10 @@ class RXESWindow(Window):
             self.ax3d.plot3D(s.inc, s.em, s.inte, c=("b", 0.3))
         self.sc3d.draw_idle()
 
+    # This is the contour map
     def graph2dSpectra(self):
+        # min and max values used for analysis later
+        # these values are used in RXESWindow.calcEmInc
         mininte = 1000
         maxinte = 0
         minem = 100000
@@ -280,9 +285,17 @@ class RXESWindow(Window):
 
         self.ax2d.cla()
         self.fixax2d()
-        self.ax2d.contourf(x, y, new_z, extend="both")
+
+        if self.map_type == "pcolor":
+            self.ax2d.pcolor(x, y, new_z)
+        elif self.map_type == "contour" or self.map_type == "contourf":
+            self.ax2d.contourf(x, y, new_z, extend="both", cmap="viridis")
+        else:
+            self.error = ErrorWindow()
+            return
         self.sc2d.draw_idle()
 
+    # Get datapoints for Emission and Incident vs Intensity 2D graphs
     def calcEmInc(self):
         self.error = lambda: ErrorWindow("invalidEmIncRXES")
 
@@ -316,9 +329,9 @@ class RXESWindow(Window):
         inc_intensity = inc_spectrum.inte
         inc_data = (inc_emission, inc_intensity)
 
-        self.error = None
         self.graphEmInc(em_data, inc_data)
 
+    # Graph Emission and Incident vs Intensity 2D graphs
     def graphEmInc(self, em, inc):
         self.emsc.plotItem.clear()
         self.emsc.plotItem.plot(em[0], em[1], pen=pg.mkPen(color="k", width=2))

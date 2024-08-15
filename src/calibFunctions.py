@@ -1,9 +1,9 @@
 # :author: Alexander Berno
 
-"""
-Calibration functions.
+"""Calibration functions.
 
 This file contains functions used for calibration.
+It also contains the energy map calculation function.
 """
 
 from pathlib import Path
@@ -62,11 +62,9 @@ def loadCalib(file_dir: Path | tuple, run_info: str | None = None):
 def getCoordsFromScans(
     scans: core.Scan | core.ScanSet,
     reorder: bool = False,
-    cuts: tuple = (3, 100),
+    cuts: tuple = (5, 100),
 ):
     """Gets the coordinates and intensities of points from scan objects.
-    Centralizes image loading since image loading is generally done
-    with the intention of then getting coordinates afterward.
 
     Parameters
     ----------
@@ -75,18 +73,21 @@ def getCoordsFromScans(
         the order of the list is the order the coordinates and intensities
         will be returned in.
     reorder: :obj:`bool`
-        NOTE: currently, setting to True does nothing.
         default value is False.
         if False, the coordinates and intensities will be placed in their own
         arrays, to be used in matplot plotting.
+
         Example array:
-            ((x1, x2, x3, ...), (x1, y2, y3, ...), (s1, s2, s3, ...))
-        if True, they will be reordered as below (NOTE: NOT YET IMPLEMENTED).
-        Example tuple:
-            ((x1, y1, s1),(x2, y2, s2),(x3, y3, s3),...)
-    cuts : :obj:`tuple`, optional
-        Pair of values (a,b) where any pixel values with intensity < a
-        or intensity > b are masked (ignored).
+            ((x1, x2, x3, ...), (y1, y2, y3, ...), (s1, s2, s3, ...))
+
+        if True, they will be reordered so each point is separated, as below.
+
+        Example array:
+            ((x1, y1, s1), (x2, y2, s2), (x3, y3, s3),...)
+
+    cuts: :obj:`tuple`, optional (Default is (5, 100))
+        Pair of values (a,b) where any pixel values with
+        'intensity < a' or 'intensity > b' are masked (ignored).
 
 
     Returns
@@ -94,7 +95,7 @@ def getCoordsFromScans(
     if 'scans' is a single scan (:obj:`core.Scan`):
         :obj:`np.ndarray` of coordinates and intensities from that scan.
     if 'scans' is a scanset (:obj:`core.ScanSet`):
-        :obj:`tuple` of arrays (:obj:`np.ndarray`) of coordinates and intensities from scans.
+        :obj:`list` of arrays (:obj:`np.ndarray`) of coordinates and intensities from scans.
 
     """
 
@@ -113,13 +114,6 @@ def getCoordsFromScans(
                     yval.append(y)
                     sval.append(img[x][y])
         points = [xval, yval, sval]
-        # image = scans.getImg(*args, **kwargs)
-        # points = np.array(utils.getCoordsFromImage(image))
-        # if reorder:
-        #     x = [i[0] for i in points]
-        #     y = [i[1] for i in points]
-        #     s = [i[2] for i in points]
-        #     points = np.array([x, y, s])
 
     else:
         points = []
@@ -136,64 +130,88 @@ def getCoordsFromScans(
                     yval.append(y)
                     sval.append(img[x][y])
             points.append([xval, yval, sval])
-            # image = scan.getImg(*args, **kwargs)
-            # p = np.array(utils.getCoordsFromImage(image))
-            # if reorder:
-            #     x = [i[0] for i in p]
-            #     y = [i[1] for i in p]
-            #     s = [i[2] for i in p]
-            #     points.append(np.array([x, y, s]))
-            # else:
-            #     points.append(p)
 
     return points
 
 
-def calcEnergyMap(scanset: core.ScanSet, points: list, hrois: list):
-    """
-    Calculates energy map for a scanset, given the points from the scanset.
-    It is assumed that the points are pre-cut (using getCoordsFromScans).
+# for each roi: roi = (lox, loy, hix, hiy)
+def calcEnergyMap(scanset: core.ScanSet, points: tuple, rois: tuple):
+    """Generates an energy map for a given scanset, in given regions.
+
+    NOTE: It is assumed that the size of 'scanset' is the same as 'points'.
 
     Parameters
     ----------
     scanset: :obj:`core.ScanSet`
-        Scanset where all scans are from. If you wish a scan not to be included,
-        remove it from the scanset before running through this function.
-    points: :obj:`list`
-        List of all points, in format gotten from getCoordsFromScans.
-        NOTE: Currently, it is assumed that the points HAVE BEEN REORDERED
-        (i.e. reorder was set to True when getCoordsFromScans was run).
-    hrois: :obj:`list`
-        List of all horizontal regions. Currently only HROIs are used,
-        however in future versions, the entire ROI will be used.
+        Set of all scans. required for getting energy values and size of images.
 
-    Returns
+        Could easily be replaced by 'energies' and 'img_size' parameters in the future.
+
+    points: :obj:`tuple`
+        Set of all points to be used from each scan.
+
+        Expected format:
+            data = (xvals, yvals, weights) for data in points
+
+        So overall:
+            points = ((s1_xvals, s1_yvals, s1_weights), (s2_xvals, s2_yvals, s2_weights), ...)
+
+    rois: :obj:`tuple`
+        All regions of interest (ROIs).
+
+        Expected format:
+            roi = (low_x, low_y, high_x, high_y) for roi in rois
+
+        These regions are expected to be rectangles, thus these 4 values are all that is needed.
+
+    returns
     -------
     :obj:`core.EnergyMap`
-        Energy map for current dataset as a core.EnergyMap object."""
+        This is the energy map created for the given points.
+    """
 
     emap = np.full(scanset.dims, float(-1))
     energies = [s.meta["IncidentEnergy"] for s in scanset]
-
-    for hroi in hrois:
-        lox, hix = hroi
+    for roi in rois:
+        lox, loy, hix, hiy = roi
         linemodels = {}
         for i, _ in enumerate(scanset):
-            linemodels[energies[i]] = np.poly1d(
-                np.polyfit(points[i][0], points[i][1], 4, w=points[i][2])
-            )
+            scanpoints = zip(points[i][0], points[i][1], points[i][2])
+            scanx, scany, scanw = [], [], []
+            for x, y, w in scanpoints:
+                if lox <= x <= hix and loy <= y <= hiy:
+                    scanx.append(x)
+                    scany.append(y)
+                    scanw.append(w)
+            if len(scanx):
+                linemodels[energies[i]] = np.poly1d(
+                    np.polyfit(scanx, scany, 4, w=scanw)
+                )
+            else:
+                linemodels[energies[i]] = np.poly1d([-1])
+
         for xval in range(int(np.ceil(lox)), int(np.ceil(hix))):
             # Fit function to column with energy as a function of pixel height y
             # Based on Bragg's Angle formula, E=a/y for some a value
-            known_yvals = [linemodels[energy](xval) for energy in linemodels]
-            known_evals = energies
+            known_yvals = tuple(
+                (
+                    linemodels[energy](xval)
+                    if loy <= linemodels[energy](xval) <= hiy
+                    else None
+                )
+                for energy in linemodels
+            )
+            known_evals = tuple(
+                e for i, e in enumerate(energies) if known_yvals[i] is not None
+            )
+            known_yvals = tuple(y for y in known_yvals if y is not None)
+
             efunc = interpolate.interp1d(known_yvals, known_evals, kind="cubic")
             for yval in range(
                 int(np.ceil(min(known_yvals))), int(max(known_yvals)) - 1
             ):
                 emap[xval][yval] = efunc(yval)
-
-        print(f"hroi {hrois.index(hroi)+1} has run of {len(hrois)} hrois.")
+        # print(f"roi {rois.index(roi)+1} has run of {len(rois)} rois.")
     return core.EnergyMap(emap)
 
 
