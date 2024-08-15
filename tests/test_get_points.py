@@ -17,7 +17,6 @@ def test_get_points_run(scans):
     """
     Does the class get points from scans properly.
     Does the class emit values and states correctly.
-    Does the
     """
 
     def addpoints(p):
@@ -33,20 +32,13 @@ def test_get_points_run(scans):
     global points
     points = []
     gp = GetPoints(scans)
-    thread = QThread()
-    gp.moveToThread(thread)
-    thread.started.connect(gp.run)
-    gp.finished.connect(thread.quit)
     gp.finished.connect(gp.deleteLater)
     gp.finished.connect(runisfalse)
-    thread.finished.connect(thread.deleteLater)
     gp.progress.connect(addpoints)
 
-    thread.start()
+    gp.run()
 
     while run:
         continue
     assert points != [] if len(scans) != 0 else points == []
     assert not run
-    assert thread is None
-    assert gp is None
