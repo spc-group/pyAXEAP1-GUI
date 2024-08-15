@@ -35,12 +35,12 @@ class ErrorWindow(QtWidgets.QDialog):
             labeltext = "Unknown Error Occurred."
 
         button = QtWidgets.QDialogButtonBox.StandardButton.Ok
-        label = QtWidgets.QLabel(text=labeltext)
+        self.tlabel = QtWidgets.QLabel(text=labeltext)
         button_box = QtWidgets.QDialogButtonBox(button)
         button_box.accepted.connect(self.accept)
 
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(label)
+        layout.addWidget(self.tlabel)
         layout.addWidget(button_box, alignment=AlignFlag.AlignCenter)
 
         self.setLayout(layout)
