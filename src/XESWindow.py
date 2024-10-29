@@ -4,7 +4,6 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
 import sys
-import axeap.core as core
 
 from ErrorWindow import ErrorWindow
 from LoadingBarWindow import LoadingBarWindow
@@ -21,9 +20,8 @@ from openpyxl.utils import get_column_letter as getColumnLetter
 
 AlignFlag = QtCore.Qt.AlignmentFlag
 
-import pathlib
 
-
+# This is to remove Qt warning messages (for parts that are known to not be problems)
 def handler(msg_type, msg_log, msg_string):
     pass
 
@@ -173,7 +171,10 @@ class XESWindow(Window):
     def closeEvent(self, event):
         # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
         if not self.no_close_dialog:
-            confirm = exitDialog(self)
+            if self.parent.confirm_on_close:
+                confirm = exitDialog(self)
+            else:
+                confirm = True
             if confirm:
                 self.parent.childWindow = None
                 event.accept()

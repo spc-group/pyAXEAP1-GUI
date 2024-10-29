@@ -21,6 +21,10 @@ class ErrorWindow(QtWidgets.QDialog):
             labeltext = "Minimum cuts must be lower than or equal to maximum cuts."
         elif error == "noInfo":
             labeltext = "No Information File has been loaded.\nPlease set the energy values or load a file."
+        elif error == "noInfoRXES":
+            labeltext = (
+                "No Information File has been loaded.\nData cannot be normalized."
+            )
         elif error == "badInfoFile":
             labeltext = "Info file is not correct.\nPlease try a different file."
         elif error == "nodispSpec":
@@ -31,6 +35,10 @@ class ErrorWindow(QtWidgets.QDialog):
             )
         elif error == "invalidEmIncRXES":
             labeltext = "No Emission or no Incident energy selected."
+        elif error == "NotEnoughData":
+            labeltext = "There are either too many or too few lines in the given information file."
+        elif error == "notImplemented":
+            labeltext = "A selected feature is not yet implemented."
         else:
             labeltext = "Unknown Error Occurred."
 

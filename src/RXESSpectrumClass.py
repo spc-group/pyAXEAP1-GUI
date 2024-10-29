@@ -1,34 +1,52 @@
 # :author: Alexander Berno
 
 from axeap.core import Spectra
+from numpy import log, array
 
 
 class Spectrum:
-    def __init__(self, parent, spectrum: Spectra, num: int):
+    def __init__(
+        self,
+        parent,
+        spectrum: Spectra,
+        num: int,
+        inc: float | None = None,
+        i0: float | None = None,
+        ul: bool = False,  # means "use log"
+        tr: bool = False,  # means "transfer"
+        ela: bool = False,  # means "elastic removal"
+    ):
         self.parent = parent
         self.spectrum = spectrum
-        self.intensities = spectrum.intensities
-        self.emission = spectrum.energies
-        self.incident = tuple(num for _, _ in enumerate(spectrum.energies))
-        self.em, self.inc, self.inte = (self.emission, self.incident, self.intensities)
+        if i0 is not None:
+            self.inte = array(spectrum.intensities) / i0
+        else:
+            self.inte = array(spectrum.intensities)
+
+        if ul:
+            self.inte = log(self.inte)
+
+        self.em = spectrum.energies
+        if inc is None:
+            self.inc = tuple(num for _, _ in enumerate(spectrum.energies))
+        else:
+            self.inc = tuple(inc for _, _ in enumerate(spectrum.energies))
+
+        if ela:
+            x = self.inc[0]
+            bad = []
+            for i, e in enumerate(self.em):
+                if x - 5 <= e <= x + 5:
+                    bad.append(i)
+
+            if len(bad):
+                avgsum = sum(self.inte[: bad[0]]) + sum(self.inte[bad[-1] + 1 :])
+                avg = avgsum / (len(self.em) - len(bad))
+                for b in bad:
+                    self.inte[b] = avg
+
+        if tr:
+            self.em = tuple(abs(x - y) for x, y in zip(self.em, self.inc))
 
         t = self.parent.filenames[num]
         self.name = t[t.rfind("/") + 1 :]
-
-    def setColours(self, minn, maxx, rrange, colours):
-        points = []
-        for i, x in enumerate(self.inc):
-            for j, y in enumerate(self.em):
-                if minn <= self.inte[j] <= rrange[0]:
-                    col = colours[0]
-                for k, num in enumerate(rrange[1:]):
-                    if k == len(rrange) - 2:
-                        col = colours[-1]
-                        break
-                    elif num <= self.inte[j] <= rrange[k + 2]:
-                        col = colours[k]
-                        break
-                points.append({"pos": (x, y), "brush": col})
-                # points.append(((x, self.inc[i + 1]), (y, self.em[j + 1]), col))
-
-        return points

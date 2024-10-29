@@ -12,6 +12,7 @@ from axeap.core import conventions as cnv
 from scipy import interpolate
 import os
 import numpy as np
+import h5py
 
 
 def loadCalib(file_dir: Path | tuple, run_info: str | None = None):
@@ -60,7 +61,7 @@ def loadCalib(file_dir: Path | tuple, run_info: str | None = None):
 
 
 def getCoordsFromScans(
-    scans: core.Scan | core.ScanSet,
+    scans: core.Scan | core.ScanSet | h5py.Dataset,
     reorder: bool = False,
     cuts: tuple = (5, 100),
 ):
@@ -98,11 +99,46 @@ def getCoordsFromScans(
         :obj:`list` of arrays (:obj:`np.ndarray`) of coordinates and intensities from scans.
 
     """
-
+    mask = cuts
     if type(scans) is core.Scan:
-        mask = cuts
         scan = scans
         img = scan.img.copy()
+        img[np.logical_or(img < mask[0], img > mask[1])] = 0
+        xval = []
+        yval = []
+        sval = []
+        if reorder:
+            for x, _ in enumerate(img):
+                for y, _ in enumerate(img[x]):
+                    if img[x][y]:
+                        xval.append(x)
+                        yval.append(y)
+                        sval.append(img[x][y])
+            points = [xval, yval, sval]
+        else:
+            points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
+
+    elif type(scans) is core.ScanSet:
+        points = []
+        for scan in scans:
+            img = scan.img.copy()
+            img[np.logical_or(img < mask[0], img > mask[1])] = 0
+            xval = []
+            yval = []
+            sval = []
+            if reorder:
+                for x, _ in enumerate(img):
+                    for y, _ in enumerate(img[x]):
+                        xval.append(x)
+                        yval.append(y)
+                        sval.append(img[x][y])
+                points.append([xval, yval, sval])
+            else:
+                points.append([(a, b, c) for a, b, c in zip(xval, yval, sval)])
+
+    elif type(scans) is h5py.Dataset:
+        img = scans[0, 0]
+        points = []
         img[np.logical_or(img < mask[0], img > mask[1])] = 0
         xval = []
         yval = []
@@ -113,25 +149,24 @@ def getCoordsFromScans(
                     xval.append(x)
                     yval.append(y)
                     sval.append(img[x][y])
-        points = [xval, yval, sval]
 
+        if reorder:
+            points = [xval, yval, sval]
+        else:
+            points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
+
+    spots = []
+    if reorder:
+        if type(points[0][0]) is not list:
+            for x, y, s in zip(points[0], points[1], points[2]):
+                spots.append({"pos": (x, y), "size": s})
+        else:
+            for i in points:
+                for x, y, s in zip(i[0], i[1], i[2]):
+                    spots.append({"pos": (x, y), "size": s})
     else:
-        points = []
-        mask = cuts
-        for scan in scans:
-            img = scan.img.copy()
-            img[np.logical_or(img < mask[0], img > mask[1])] = 0
-            xval = []
-            yval = []
-            sval = []
-            for x, _ in enumerate(img):
-                for y, _ in enumerate(img[x]):
-                    xval.append(x)
-                    yval.append(y)
-                    sval.append(img[x][y])
-            points.append([xval, yval, sval])
-
-    return points
+        pass
+    return points, spots
 
 
 # for each roi: roi = (lox, loy, hix, hiy)

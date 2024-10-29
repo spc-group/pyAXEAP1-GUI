@@ -21,8 +21,7 @@ class Window(QtWidgets.QMainWindow):
         if not len(text[0]):
             return
         emap = core.EnergyMap.loadFromPath(text[0])
-        if emap.name not in (e.name for e in self.emaps):
-            if len(self.emaps):
-                self.emap_combo.insertSeparator(len(self.emaps))
-            self.emaps.append(emap)
-            self.emap_combo.addItem(emap.name)
+        if len(self.emaps):
+            self.emap_combo.insertSeparator(len(self.emaps))
+        self.emaps.append(emap)
+        self.emap_combo.addItem(emap.name)

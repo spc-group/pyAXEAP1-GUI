@@ -16,12 +16,13 @@ from RXESWindow import RXESWindow
 from calibFunctions import approximateROIs, getCoordsFromScans, calcEnergyMap
 from CalibFileClass import CalibFile
 from SettingsWindow import SettingsWindow
-from FileLoad import LoadCalibData, LoadInfoData
+from FileLoad import LoadTiffCalib, LoadInfoData, LoadH5Calib
 from ExitDialogWindow import exitDialog
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 
+# ignores numpy warnings and errors (e.g. dividing by 0)
 np.seterr(all="ignore")
 
 # Alignment flags are used to place items in a window.
@@ -54,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.emap_img = None
         self.calib_grid_scroll = None
         self.points = []
+        self.spots = []
 
         # get settings from settings file, or load defaults
         settings = self.getSettings()
@@ -61,6 +63,13 @@ class MainWindow(QtWidgets.QMainWindow):
             settings = self.getDefaultSettings()
 
         SettingsWindow.saveSettings(None, settings)
+
+        self.load_data_type = settings["data_load_type"]
+        conf = settings["confirm_on_close"]
+        if conf == "False" or not conf:
+            self.confirm_on_close = False
+        else:
+            self.confirm_on_close = True
 
         self.setWindowTitle("pyAXEAP1")
         self.setFixedSize(960, 574)
@@ -92,9 +101,9 @@ class MainWindow(QtWidgets.QMainWindow):
         emap_load_button.clicked.connect(self.loadEmap)
 
         # settings button
-        set_button = QtWidgets.QPushButton("Settings")
-        set_button.clicked.connect(lambda: self.openSettings(settings))
-        set_button.setFixedSize(120, 30)
+        self.set_button = QtWidgets.QPushButton("Settings")
+        self.set_button.clicked.connect(lambda: self.openSettings(settings))
+        self.set_button.setFixedSize(120, 30)
 
         # energy map buttons
         emap_area = QtWidgets.QScrollArea()
@@ -166,7 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mlayout.addWidget(emap_load_button, 0, 1, AlignFlag.AlignCenter)
         self.mlayout.addWidget(xes_button, 1, 0, AlignFlag.AlignCenter)
         self.mlayout.addWidget(rxes_button, 1, 1, AlignFlag.AlignCenter)
-        self.mlayout.addWidget(set_button, 1, 2, AlignFlag.AlignLeft)
+        self.mlayout.addWidget(self.set_button, 1, 2, AlignFlag.AlignLeft)
         self.mlayout.addWidget(
             emap_area, 2, 0, 1, 2, AlignFlag.AlignLeft | AlignFlag.AlignTop
         )
@@ -180,7 +189,10 @@ class MainWindow(QtWidgets.QMainWindow):
     # occurs when window is closed
     def closeEvent(self, event):
         # this dialog box should always show up
-        confirm = exitDialog(self)
+        if self.confirm_on_close:
+            confirm = exitDialog(self)
+        else:
+            confirm = True
         if confirm:
             if self.childWindow is not None:
                 # closes the child window without a dialog box
@@ -193,28 +205,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # gets setting values from settings file
     def getSettings(self):
-        try:
-            with open("settings.ini", "r") as s:
-                lines = s.readlines()
-                s.close()
-        except Exception:
-            return
-        settings = {}
-        for line in lines:
-            if not len(line) or line[0] == "#":
-                continue
-            if "\n" in line:
-                line = line[: line.find("\n")]
-            settings[line[: line.find(" =")]] = line[line.find("= ") + 2 :]
-        defaults = self.getDefaultSettings()
-        for setting in defaults:
-            if setting not in settings:
-                settings[setting] = defaults[setting]
+        settings = SettingsWindow.getFileSettings()
         return settings
 
     # gets the default values for the settings (for when settings file is missing, or resetting)
     def getDefaultSettings(self):
-        settings = {"default_min_cuts": "3", "default_max_cuts": "10000"}
+        settings = SettingsWindow.getDefaultSettings()
         return settings
 
     # gets settings if not given, and then opens settings window
@@ -226,14 +222,31 @@ class MainWindow(QtWidgets.QMainWindow):
                 settings = self.getDefaultSettings()
 
         self.SettingsWindow = SettingsWindow(self, settings)
+        self.SettingsWindow.finished.connect(self.setSettings)
+
+    def setSettings(self):
+        settings = self.SettingsWindow.getSettings()
+        self.SettingsWindow = None
+        self.set_button.clicked.disconnect()
+        self.set_button.clicked.connect(lambda: self.openSettings(settings))
+        self.load_data_type = settings["data_load_type"]
+        conf = settings["confirm_on_close"]
+        if conf == "False" or not conf:
+            self.confirm_on_close = False
+        else:
+            self.confirm_on_close = True
 
     # opens calibration file dialog window, then loads data
     def openPath(self):
-        self.calibfiledir = LoadCalibData.fileDialog(self)
+        if self.load_data_type == "tif":
+            self.calibfiledir = LoadTiffCalib.fileDialog(self)
 
-        if self.calibfiledir is not None:
-            self.calibscans = LoadCalibData.loadData(self.calibfiledir)
-            self.getCalibPoints(True)
+            if self.calibfiledir is not None:
+                self.calibscans = LoadTiffCalib.loadData(self.calibfiledir)
+        elif self.load_data_type == "h5py":
+            self.calibfiledir = LoadH5Calib.fileDialog(self)
+
+        self.getCalibPoints(True)
 
     # loads information file
     def loadInfoFile(self):
@@ -248,17 +261,32 @@ class MainWindow(QtWidgets.QMainWindow):
             self.error = ErrorWindow("minmaxcuts")
             return
         self.LoadWindow = LoadingBarWindow(
-            "Loading calibration data...", len(self.calibscans)
+            "Loading calibration data...", len(self.calibfiledir)
         )
         old_points = self.points
         self.points = []
-        for i in self.calibscans:
-            if self.LoadWindow.wasCanceled():
-                self.points = old_points
-                return
-            self.points.append(getCoordsFromScans(i, reorder=True, cuts=(minc, maxc)))
-            self.LoadWindow.add()
-            QtWidgets.QApplication.processEvents()
+        old_spots = self.spots
+        self.spots = []
+        if self.load_data_type == "tif":
+            for i in self.calibscans:
+                if self.LoadWindow.wasCanceled():
+                    self.points = old_points
+                    self.spots = old_spots
+                    return
+                points, spots = getCoordsFromScans(i, reorder=True, cuts=(minc, maxc))
+                self.points.append(points)
+                self.spots.append(spots)
+                self.LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
+        elif self.load_data_type == "h5py":
+            for i in self.calibfiledir:
+                if self.LoadWindow.wasCanceled():
+                    self.points = old_points
+                    return
+                self.points += LoadH5Calib.loadData(i, (minc, maxc))
+                self.LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
+
         if runinit:
             self.initDrawCalibPoints()
         else:
@@ -325,6 +353,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for i in self.points:
             self.ax.addPoints(i[0], i[1], size=1, brush=(0, 0, 0, 255))
+        # self.ax.addPoints(spots=self.spots, brush=(0, 0, 0, 255)[0])
 
         # enables buttons
         self.drawn_calib = True
