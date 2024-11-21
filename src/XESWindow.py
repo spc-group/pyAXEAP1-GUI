@@ -11,7 +11,7 @@ from spectraFunctions import calcDataForSpectra, calcSpectra
 from XESSpectrumClass import Spectrum
 from colourGenerator import colourGen
 from ColourSelectWindow import ColourSelect
-from FileLoad import LoadTifSpectraData
+from FileLoad import LoadTifSpectraData, LoadH5Data
 from ExitDialogWindow import exitDialog
 from BaseWindow import Window
 
@@ -55,7 +55,10 @@ class XESWindow(Window):
         )
 
         # Defaults
-        self.no_close_dialog = False
+        if self.parent is None:
+            self.no_close_dialog = True
+        else:
+            self.no_close_dialog = False
         self.average_spectra = None
         self.emaps = []
 
@@ -171,12 +174,16 @@ class XESWindow(Window):
     def closeEvent(self, event):
         # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
         if not self.no_close_dialog:
-            if self.parent.confirm_on_close:
-                confirm = exitDialog(self)
+            if hasattr(self.parent, "confirm_on_close"):
+                if self.parent.confirm_on_close:
+                    confirm = exitDialog(self)
+                else:
+                    confirm = True
             else:
-                confirm = True
+                confirm = exitDialog(self)
             if confirm:
-                self.parent.childWindow = None
+                if hasattr(self.parent, "childWindow"):
+                    self.parent.childWindow = None
                 event.accept()
             else:
                 event.ignore()
@@ -194,7 +201,14 @@ class XESWindow(Window):
                 self.error = ErrorWindow("XESemap")
                 return
 
-        self.filenames = LoadTifSpectraData.fileDialog(self)
+        dtype = self.loadType()
+        if dtype == "tif":
+            self.filenames = LoadTifSpectraData.fileDialog(self)
+        elif dtype == "h5py":
+            self.filenames = LoadH5Data.fileDialog(self)
+        else:
+            raise TypeError(f"unknown dtype {dtype}")
+
         if not self.filenames:
             return
 
@@ -206,7 +220,11 @@ class XESWindow(Window):
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
-            scanset.append(calcSpectra(i, emap, data))
+            spectra = calcSpectra(i, emap, data, dtype)
+            if type(spectra) is list:
+                scanset += spectra
+            else:
+                scanset.append(spectra)
             LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
@@ -463,6 +481,6 @@ class XESWindow(Window):
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QtGui.QIcon("icons/spc-logo-nobg.png"))
-    W = XESWindow(QtWidgets.QMainWindow)
+    W = XESWindow(None)
     # sys.exit(app.exec())
     app.exec()

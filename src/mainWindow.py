@@ -16,7 +16,7 @@ from RXESWindow import RXESWindow
 from calibFunctions import approximateROIs, getCoordsFromScans, calcEnergyMap
 from CalibFileClass import CalibFile
 from SettingsWindow import SettingsWindow
-from FileLoad import LoadTiffCalib, LoadInfoData, LoadH5Calib
+from FileLoad import LoadTiffCalib, LoadInfoData, LoadH5Data
 from ExitDialogWindow import exitDialog
 
 from PyQt6 import QtCore, QtWidgets, QtGui
@@ -244,7 +244,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.calibfiledir is not None:
                 self.calibscans = LoadTiffCalib.loadData(self.calibfiledir)
         elif self.load_data_type == "h5py":
-            self.calibfiledir = LoadH5Calib.fileDialog(self)
+            self.calibfiledir = LoadH5Data.fileDialog(self)
 
         self.getCalibPoints(True)
 
@@ -283,7 +283,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if self.LoadWindow.wasCanceled():
                     self.points = old_points
                     return
-                self.points += LoadH5Calib.loadData(i, (minc, maxc))
+                self.points += LoadH5Data.loadData(i, (minc, maxc))
                 self.LoadWindow.add()
                 QtWidgets.QApplication.processEvents()
 
@@ -576,6 +576,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.childWindow.activateWindow()
             run = exitDialog(self.childWindow)
             if run:
+                self.childWindow.no_close_dialog = True
+                self.childWindow.close()
                 self.childWindow = XESWindow(self)
         elif self.childWindow is None:
             self.childWindow = XESWindow(self)
@@ -590,6 +592,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.childWindow.activateWindow()
             run = exitDialog(self.childWindow)
             if run:
+                self.childWindow.no_close_dialog = True
+                self.childWindow.close()
                 self.childWindow = RXESWindow(self)
         elif self.childWindow is None:
             self.childWindow = RXESWindow(self)

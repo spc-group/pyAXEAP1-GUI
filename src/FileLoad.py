@@ -49,7 +49,7 @@ class LoadTiffCalib(LoadFile):
         return loadCalib(directory)
 
 
-class LoadH5Calib(LoadFile):
+class LoadH5Data(LoadFile):
     def fileDialog(parent: any):
         direct = QFileDialog.getOpenFileNames(
             parent=parent,
@@ -61,7 +61,7 @@ class LoadH5Calib(LoadFile):
         else:
             return None
 
-    def loadData(directory: str | tuple, cuts: tuple):
+    def loadData(directory: str | tuple):
         # "C:\\Users\\bernoa\\Desktop\\mark_data\\example_count_data.nx"
 
         def getImages(node):
@@ -80,13 +80,14 @@ class LoadH5Calib(LoadFile):
         points = []
         if isinstance(directory, Sequence) and not isinstance(directory, (str,)):
             for d in directory:
-                points += LoadH5Calib.loadData(d, cuts)
+                points += LoadH5Data.loadData(d)
 
         else:
             with h5py.File(directory, mode="r") as fd:
                 images = getImages(fd)
-                for img in images:
-                    points.append(getCoordsFromScans(img, reorder=True, cuts=cuts)[0])
+                for imgs in images:
+                    for img in imgs:
+                        points.append(img[0])
         return points
 
 

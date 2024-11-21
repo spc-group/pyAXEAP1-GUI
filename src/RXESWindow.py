@@ -1,6 +1,7 @@
 # :author: Alexander Berno
 """RXES Window"""
 
+from axeap.core import Scan
 import numpy as np
 import pyqtgraph as pg
 import sys
@@ -15,8 +16,8 @@ import matplotlib
 matplotlib.use("QtAgg")
 
 from ExitDialogWindow import exitDialog
-from RXESSpectrumClass import Spectrum
-from FileLoad import LoadTifSpectraData
+from RXESSpectrumClass import Dataset, Spectrum
+from FileLoad import LoadTifSpectraData, LoadH5Data
 from BaseWindow import Window
 from ErrorWindow import ErrorWindow
 from spectraFunctions import calcDataForSpectra, calcSpectra
@@ -75,6 +76,9 @@ class RXESWindow(Window):
         self.use_log = False
         self.transfer = False
         self.ela_remove = False
+        self.scanset = []
+        self.foldernames = []
+        self.datasets = []
 
         # energy map assignment (if parent has an energy map)
         if self.parent is None:
@@ -121,7 +125,7 @@ class RXESWindow(Window):
         self.incsc.setFixedSize(300, 300)
 
         # RXES data button
-        load_rxes_button = QtWidgets.QPushButton("RXES Data...")
+        load_rxes_button = QtWidgets.QPushButton("Load RXES Data...")
         load_rxes_button.clicked.connect(self.loadRXES)
         load_rxes_button.setFixedSize(140, 30)
 
@@ -157,7 +161,10 @@ class RXESWindow(Window):
         info_load_button.clicked.connect(self.loadInfoFile)
 
         # colour mode selection box and label
-        cmap = SettingsWindow.getFileSettings()["cmap"]
+        try:
+            cmap = SettingsWindow.getFileSettings()["cmap"]
+        except Exception:
+            cmap = "pcolor"
         self.colour_mode = QtWidgets.QComboBox()
         self.colour_mode.setFixedSize(72, 30)
         self.colour_mode.addItem("PColor", "pcolor")
@@ -290,6 +297,7 @@ class RXESWindow(Window):
 
     # Main function for loading RXES data
     def loadRXES(self):
+
         if len(self.emaps):
             self.emap = self.emaps[int(self.emap_combo.currentIndex() / 2)]
         elif self.emap is None:
@@ -299,20 +307,31 @@ class RXESWindow(Window):
                 self.error = ErrorWindow("XESemap")
                 return
 
-        self.filenames = LoadTifSpectraData.fileDialog(self)
+        emap = self.emap
+        data = calcDataForSpectra(emap)
+        dtype = self.loadType()
+        if dtype == "tif":
+            self.filenames = LoadTifSpectraData.fileDialog(self)
+        elif dtype == "h5py":
+            self.filenames = LoadH5Data.fileDialog(self)
+        else:
+            raise TypeError(f"Unknown dtype {dtype}")
+
         if not self.filenames:
             return
 
-        emap = self.emap
         LoadWindow = LoadingBarWindow(
             "Loading RXES (RIXS) data...", len(self.filenames)
         )
         scanset = []
-        data = calcDataForSpectra(emap)
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
-            scanset.append(calcSpectra(i, emap, data))
+            spectra = calcSpectra(i, emap, data, dtype)
+            if type(spectra) is list:
+                scanset += spectra
+            else:
+                scanset.append(spectra)
             LoadWindow.add()
             QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
@@ -320,29 +339,69 @@ class RXESWindow(Window):
         if LoadWindow.wasCanceled():
             return
 
-        self.scanset = scanset
+        self.scanset.append(scanset)
+        # if multi:
+        #     if self.scanset != []:
+        #         if type(self.scanset[0]) is not list:
+        #             self.scanset = []
+        #     self.scanset.append(scanset)
+
+        # else:
+        #     self.scanset = scanset
+
+        dname = self.filenames[0]
+        dname = dname[: dname.rfind("/")]
+        dname = dname[dname.rfind("/") + 1 :]
+        self.foldernames.append(dname)
+        dataset = Dataset(self, dname, scanset, len(self.datasets))
+        self.datasets.append(dataset)
+        self.addDataCheckbox()
 
         failed = self.setData(self.scanset)  # returns True if failed, otherwise None
         if failed:
+            self.foldernames.remove(dname)
+            self.datasets.remove(dataset)
+            self.addDataCheckbox()
             return
+
         self.graph3dSpectra()
         self.graph2dSpectra()
 
     def setData(self, scanset):
+
+        new_set = []
+        for dataset in self.datasets:
+            if dataset.enabled:
+                new_set.append(dataset.data)
+
+        scanset = new_set
+        if not len(scanset):
+            self.spectra = []
+            return
+
         ul = self.use_log
         tr = self.transfer
         ela = self.ela_remove
         if not self.normalize and self.incident_energy is None:
-            self.spectra = [
-                Spectrum(self, s, i, ul=ul, tr=tr, ela=ela)
-                for i, s in enumerate(scanset)
-            ]
+            # if not multi:
+            #     self.spectra = [
+            #         Spectrum(self, s, i, ul=ul, tr=tr, ela=ela)
+            #         for i, s in enumerate(scanset)
+            #     ]
+            # else:
+            self.spectra = []
+            for i, _ in enumerate(scanset[0]):
+                s = [scanset[j][i] for j, _ in enumerate(scanset)]
+                self.spectra.append(Spectrum(self, s, i, ul=ul, tr=tr, ela=ela))
         elif self.i0 is None or self.incident_energy is None:
             self.error = ErrorWindow("noInfoRXES")
             return True
 
         else:
-            slen = len(scanset)
+            # if multi:
+            slen = len(scanset[0])
+            # else:
+            #     slen = len(scanset)
 
             inc = self.incident_energy
             i0 = self.i0
@@ -354,15 +413,53 @@ class RXESWindow(Window):
                 if slen != i0len or slen != inclen or i0len != inclen:
                     self.error = ErrorWindow("NotEnoughData")
                     return True
-                self.spectra = [
-                    Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
-                    for i, s in enumerate(scanset)
-                ]
+                # if not multi:
+                #     self.spectra = [
+                #         Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
+                #         for i, s in enumerate(scanset)
+                #     ]
+                # else:
+                self.spectra = []
+                for i, _ in enumerate(scanset[0]):
+                    s = [scanset[j][i] for j, _ in enumerate(scanset)]
+                    self.spectra.append(
+                        Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
+                    )
+
             else:
-                self.spectra = [
-                    Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
-                    for i, s in enumerate(scanset)
-                ]
+                # if not multi:
+                #     self.spectra = [
+                #         Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
+                #         for i, s in enumerate(scanset)
+                #     ]
+                # else:
+                self.spectra = []
+                for i, _ in enumerate(scanset[0]):
+                    s = [scanset[j][i] for j, _ in enumerate(scanset)]
+                    self.spectra.append(
+                        Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
+                    )
+
+    def addDataCheckbox(self):
+
+        try:
+            self.mlayout.removeWidget(self.checks)
+        except Exception:
+            pass
+
+        self.checks = QtWidgets.QScrollArea()
+        self.checks_widget = QtWidgets.QWidget()
+        self.checks_grid = QtWidgets.QGridLayout(self.checks_widget)
+
+        self.datasets = [
+            Dataset(self, d.name, d.data, d.num, d.enabled) for d in self.datasets
+        ]
+        for dataset in self.datasets:
+            self.checks_grid.addWidget(dataset.box, dataset.num, 0)
+            self.checks_grid.setRowMinimumHeight(dataset.num, 20)
+
+        self.checks.setWidget(self.checks_widget)
+        self.mlayout.addWidget(self.checks, 4, 0)
 
     def refresh(self):
         self.setData(self.scanset)
@@ -375,6 +472,10 @@ class RXESWindow(Window):
         self.fixax3d()
         self.refresh_button.setDisabled(False)
 
+        if not len(self.spectra):
+            self.sc3d.draw_idle()
+            return
+
         for _, s in enumerate(self.spectra):
             self.ax3d.plot3D(s.inc, s.em, s.inte, c=("b", 0.3))
         self.sc3d.draw_idle()
@@ -383,6 +484,13 @@ class RXESWindow(Window):
     def graph2dSpectra(self):
         # min and max values used for analysis later
         # these values are used in RXESWindow.calcEmInc
+
+        if not len(self.spectra):
+            self.ax2d.cla()
+            self.fixax2d()
+            self.sc2d.draw_idle()
+            return
+
         mininte = 1000
         maxinte = 0
         minem = 100000
@@ -443,7 +551,7 @@ class RXESWindow(Window):
         self.fixax2d()
         self.map_type = self.colour_mode.currentData()
         if self.map_type == "contour":
-            self.ax2d.contourf(x, y, new_z, extend="both", cmap="viridis")
+            self.ax2d.contourf(x, y, new_z, levels=14, extend="both", cmap="viridis")
         elif self.map_type == "pcolor":
             self.ax2d.pcolor(x, y, new_z)
 

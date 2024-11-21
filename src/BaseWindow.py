@@ -1,6 +1,7 @@
 from PyQt6 import QtWidgets
 import axeap.core as core
 import pathlib
+from SettingsWindow import SettingsWindow
 
 
 class Window(QtWidgets.QMainWindow):
@@ -25,3 +26,10 @@ class Window(QtWidgets.QMainWindow):
             self.emap_combo.insertSeparator(len(self.emaps))
         self.emaps.append(emap)
         self.emap_combo.addItem(emap.name)
+
+    def loadType(self):
+        try:
+            dtype = SettingsWindow.getFileSettings()["data_load_type"]
+        except Exception:
+            dtype = "tif"
+        return dtype

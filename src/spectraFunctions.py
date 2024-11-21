@@ -10,6 +10,7 @@ XES and RXES spectra are calculated using the same functions.
 from pathlib import Path
 from axeap import core
 import numpy as np
+from FileLoad import LoadH5Data
 
 
 def calcDataForSpectra(emap: core.EnergyMap):
@@ -46,7 +47,12 @@ def calcDataForSpectra(emap: core.EnergyMap):
     }
 
 
-def calcSpectra(file_dir: Path, emap: core.EnergyMap, data: dict | None):
+def calcSpectra(
+    file_dir: Path | tuple,
+    emap: core.EnergyMap,
+    data: dict | None,
+    dtype: str | None = None,
+):
     """
     Calculates spectra for XES and RXES scans using a given energy map.
 
@@ -67,16 +73,24 @@ def calcSpectra(file_dir: Path, emap: core.EnergyMap, data: dict | None):
     :obj:`core.spectra.Spectra`
     or list of :obj:`core.spectra.Spectra`
     """
-
-    try:
-        scans = core.ScanSet.loadFromPath(file_dir)
-        if len(scans.items) == 0:
-            scans = core.Scan.loadFromPath(file_dir)
-    except Exception:
+    if dtype == "tif" or dtype == "tiff" or dtype is None:
+        try:
+            scans = core.ScanSet.loadFromPath(file_dir)
+            if len(scans.items) == 0:
+                scans = core.Scan.loadFromPath(file_dir)
+        except Exception:
+            scans = []
+            for i in file_dir:
+                scans.append(core.Scan.loadFromPath(i))
+            scans = core.ScanSet(scans)
+    elif dtype == "h5py":
         scans = []
-        for i in file_dir:
-            scans.append(core.Scan.loadFromPath(i))
+        images = LoadH5Data.loadData(file_dir)
+        for img in images:
+            scans.append(core.Scan(img))
         scans = core.ScanSet(scans)
+    else:
+        raise TypeError(f"unknown dtype {dtype}, only accepts tif or h5py")
 
     if data is None:
         data = calcDataForSpectra(emap)

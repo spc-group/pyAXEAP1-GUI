@@ -137,23 +137,24 @@ def getCoordsFromScans(
                 points.append([(a, b, c) for a, b, c in zip(xval, yval, sval)])
 
     elif type(scans) is h5py.Dataset:
-        img = scans[0, 0]
-        points = []
-        img[np.logical_or(img < mask[0], img > mask[1])] = 0
-        xval = []
-        yval = []
-        sval = []
-        for x, _ in enumerate(img):
-            for y, _ in enumerate(img[x]):
-                if img[x][y]:
-                    xval.append(x)
-                    yval.append(y)
-                    sval.append(img[x][y])
+        raise NotImplementedError("H5 calib files are a work in progress.")
+    #     img = scans[0, 0]
+    #     points = []
+    #     img[np.logical_or(img < mask[0], img > mask[1])] = 0
+    #     xval = []
+    #     yval = []
+    #     sval = []
+    #     for x, _ in enumerate(img):
+    #         for y, _ in enumerate(img[x]):
+    #             if img[x][y]:
+    #                 xval.append(x)
+    #                 yval.append(y)
+    #                 sval.append(img[x][y])
 
-        if reorder:
-            points = [xval, yval, sval]
-        else:
-            points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
+    #     if reorder:
+    #         points = [xval, yval, sval]
+    #     else:
+    #         points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
 
     spots = []
     if reorder:

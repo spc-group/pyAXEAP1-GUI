@@ -33,9 +33,11 @@ class Spectrum:
         self.current = self.base.copy()
 
         self.colour = colour
-
-        t = self.parent.filenames[num - 3]
-        self.name = t[t.rfind("/") + 1 :]
+        try:
+            t = self.parent.filenames[num - 3]
+            self.name = t[t.rfind("/") + 1 :]
+        except Exception:
+            self.name = str(num)
         self.box = QtWidgets.QCheckBox()
         self.box.setChecked(True)
         self.box.stateChanged.connect(self.hide)
