@@ -37,6 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
     """Main Window for application. Allows the viewing of data."""
 
     def __init__(self, *args, **kwargs):
+        """initializes the main window"""
         super(MainWindow, self).__init__(*args, **kwargs)
 
         # Defaults
@@ -188,7 +189,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # occurs when window is closed
     def closeEvent(self, event):
-        # this dialog box should always show up
+        """modified close event to add confirmation on close"""
         if self.confirm_on_close:
             confirm = exitDialog(self)
         else:
@@ -224,6 +225,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.SettingsWindow = SettingsWindow(self, settings)
         self.SettingsWindow.finished.connect(self.setSettings)
 
+    # sets settings after getting them
     def setSettings(self):
         settings = self.SettingsWindow.getSettings()
         self.SettingsWindow = None
@@ -238,64 +240,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # opens calibration file dialog window, then loads data
     def openPath(self):
+
         if self.load_data_type == "tif":
             self.calibfiledir = LoadTiffCalib.fileDialog(self)
 
             if self.calibfiledir is not None:
                 self.calibscans = LoadTiffCalib.loadData(self.calibfiledir)
+            else:
+                return
         elif self.load_data_type == "h5py":
             self.calibfiledir = LoadH5Data.fileDialog(self)
+            if self.calibfiledir is not None:
+                images = []
+                for i in self.calibfiledir:
+                    images.append(LoadH5Data.loadData(i))
 
-        self.getCalibPoints(True)
-
-    # loads information file
-    def loadInfoFile(self):
-        directory = LoadInfoData.fileDialog(self)
-        self.info_file = LoadInfoData.loadData(self, directory)
-
-    # gets points from calibration scans
-    def getCalibPoints(self, runinit: bool = False):
-        minc = self.mincuts.value()
-        maxc = self.maxcuts.value()
-        if minc > maxc:
-            self.error = ErrorWindow("minmaxcuts")
-            return
-        self.LoadWindow = LoadingBarWindow(
-            "Loading calibration data...", len(self.calibfiledir)
-        )
-        old_points = self.points
-        self.points = []
-        old_spots = self.spots
-        self.spots = []
-        if self.load_data_type == "tif":
-            for i in self.calibscans:
-                if self.LoadWindow.wasCanceled():
-                    self.points = old_points
-                    self.spots = old_spots
-                    return
-                points, spots = getCoordsFromScans(i, reorder=True, cuts=(minc, maxc))
-                self.points.append(points)
-                self.spots.append(spots)
-                self.LoadWindow.add()
-                QtWidgets.QApplication.processEvents()
-        elif self.load_data_type == "h5py":
-            for i in self.calibfiledir:
-                if self.LoadWindow.wasCanceled():
-                    self.points = old_points
-                    return
-                self.points += LoadH5Data.loadData(i, (minc, maxc))
-                self.LoadWindow.add()
-                QtWidgets.QApplication.processEvents()
-
-        if runinit:
-            self.initDrawCalibPoints()
-        else:
-            self.drawCalibPoints()
-
-    # runs drawCalibPoints and places file names next to energy input boxes
-    def initDrawCalibPoints(self):
-
-        self.drawCalibPoints()
+                self.calibscans = []
+                for imgs in images:
+                    for img in imgs:
+                        self.calibscans.append(img)
+            else:
+                return
 
         # creates a new scrollable area
         if self.calib_grid_scroll is not None:
@@ -324,15 +289,81 @@ class MainWindow(QtWidgets.QMainWindow):
         self.calib_grid.addWidget(energy, 0, 2, AlignFlag.AlignLeft)
         del font, energy
 
-        # stores energies for calib files, allows for easy changing
-        self.calib_energies = [
-            CalibFile(self, self.calibfiledir[i], i + 1)
-            for i, _ in enumerate(self.calibfiledir)
-        ]
+        if self.load_data_type == "tif":
+            self.calib_energies = [
+                CalibFile(
+                    self, self.calibscans.items[i], c, i + 1, self.calibscans.dims
+                )
+                for i, c in enumerate(self.calibfiledir)
+            ]
+        elif self.load_data_type == "h5py":
+            self.calib_energies = [
+                CalibFile(self, c, str(i), i + 1, (len(c[0]), len(c)))
+                for i, c in enumerate(self.calibscans)
+            ]
 
         # adds scrollable area to the main window
         self.calib_grid_scroll.setWidget(self.calib_widget)
         self.calib_grid_scroll.setFixedWidth(290)
+
+        self.getCalibPoints(True)
+
+    # loads information file
+    def loadInfoFile(self):
+        directory = LoadInfoData.fileDialog(self)
+        self.info_file = LoadInfoData.loadData(self, directory)
+
+    # gets points from calibration scans
+    def getCalibPoints(self, runinit: bool = False):
+        minc = self.mincuts.value()
+        maxc = self.maxcuts.value()
+        if minc > maxc:
+            self.error = ErrorWindow("minmaxcuts")
+            return
+        self.LoadWindow = LoadingBarWindow(
+            "Loading calibration data...", len(self.calib_energies)
+        )
+        old_points = self.points
+        self.points = []
+        old_spots = self.spots
+        self.spots = []
+        if self.load_data_type == "tif":
+            for i in self.calib_energies:
+                if self.LoadWindow.wasCanceled():
+                    self.points = old_points
+                    self.spots = old_spots
+                    return
+                if i.enabled:
+                    points, spots = getCoordsFromScans(
+                        i.data, reorder=True, cuts=(minc, maxc)
+                    )
+                    self.points.append(points)
+                    self.spots.append(spots)
+                self.LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
+        elif self.load_data_type == "h5py":
+            for i in self.calib_energies:
+                if self.LoadWindow.wasCanceled():
+                    self.points = old_points
+                    return
+                if i.enabled:
+                    points, spots = getCoordsFromScans(
+                        i.data, reorder=True, cuts=(minc, maxc), dtype="h5py"
+                    )
+                    self.points.append(points)
+                    self.spots.append(spots)
+                self.LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
+
+        if runinit:
+            self.initDrawCalibPoints()
+        else:
+            self.drawCalibPoints()
+
+    # runs drawCalibPoints and places file names next to energy input boxes
+    def initDrawCalibPoints(self):
+
+        self.drawCalibPoints()
         self.mlayout.addWidget(self.calib_grid_scroll, 3, 0, 1, 2, AlignFlag.AlignLeft)
 
     # draws calibration points to the main scatter plot grid
@@ -408,7 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # approximates ROIs
         numcrystals = self.ApproxWindow.value
-        lencalibs = len(self.calibscans.items)
+        lencalibs = len(self.calib_energies)
         hrois, vrois = approximateROIs(
             numcrystals,
             self.mincuts.value(),
@@ -482,18 +513,13 @@ class MainWindow(QtWidgets.QMainWindow):
     # organizes data and then calculates an energy map
     def calcEmap(self):
         # stops if any energy value is not given
-        if self.info_file is None and any(e.getVal() == 0 for e in self.calib_energies):
+        enabled = tuple(i for i in self.calib_energies if i.enabled)
+        if self.info_file is None and any(e.getVal() == 0 for e in enabled):
             self.error = ErrorWindow("noInfo")
             return
 
-        # tries to set all energies
-        try:
-            scans = self.calibscans.items
-            for i, s in enumerate(scans):
-                s.meta["IncidentEnergy"] = self.calib_energies[i].getVal()
-        except Exception:
-            self.error = ErrorWindow("emapCalib")
-            return
+        scans = [i.data for i in enabled]
+        energies = [i.getVal() for i in enabled]
 
         # creates a dataset without the files that have no datapoints
         points = self.points.copy()
@@ -504,8 +530,8 @@ class MainWindow(QtWidgets.QMainWindow):
         for i in indexes:
             scans.pop(i)
             points.pop(i)
+            energies.pop(i)
         del indexes
-        scans = core.ScanSet(scans)
         self.approx_rois.setDisabled(True)
         self.add_roi.setDisabled(True)
         self.load_info_file_button.setDisabled(True)
@@ -518,7 +544,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # tries multiple energy map calculation methods
         rois = self.calcRois()
-        self.emap = calcEnergyMap(scans, points, rois)
+        dims = enabled[0].dims
+        self.emap = calcEnergyMap(dims, energies, points, rois)
 
         self.drawEmap()  # draws the final energy map
 
@@ -601,6 +628,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.error = ErrorWindow()
 
 
+# creates a MainWindow when file is execcuted
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QtGui.QIcon("icons/spc-logo-nobg.png"))

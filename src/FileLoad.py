@@ -54,7 +54,7 @@ class LoadH5Data(LoadFile):
         direct = QFileDialog.getOpenFileNames(
             parent=parent,
             directory=desktop_directory,
-            filter="NX Files (*.nx)",
+            filter="NX Files (*.nx *.*)",
         )
         if direct[0] != [] and direct[1] != "":
             return direct[0]
@@ -69,7 +69,9 @@ class LoadH5Data(LoadFile):
             for key in node.keys():
                 child_node = node[key]
                 if hasattr(child_node, "dtype"):
-                    if key.endswith("_image"):
+                    if key == "eiger_image":
+                        images.append(child_node)
+                    elif key.endswith("_image"):
                         images.append(child_node)
                 elif hasattr(child_node, "keys"):
                     im = getImages(child_node)
@@ -131,6 +133,13 @@ class LoadInfoData(LoadFile):
                             i = 0
                     i += 1
             wb.close()
+
+        elif directory[0][-4:] == ".txt":
+            with open(directory[0], "r") as f:
+                lines = f.readlines()
+                for i, line in enumerate(lines):
+                    # scan.meta["IncidentEnergy"] = lines[i]
+                    energies[i].changeVal(float(line[: line.find("\n")]))
 
         elif directory[1] != "":
             if rtype == "calib":

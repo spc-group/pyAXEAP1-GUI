@@ -34,10 +34,12 @@ def handler(msg_type, msg_log, msg_string):
     pass
 
 
+# see handler above
 QtCore.qInstallMessageHandler(handler)
 
 
 class Mpl3dCanvas(FigureCanvas):
+    """canvas for 3d figure"""
 
     def __init__(self, parent=None, width=3, height=3, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
@@ -46,6 +48,7 @@ class Mpl3dCanvas(FigureCanvas):
 
 
 class Mpl2dCanvas(FigureCanvas):
+    """canvas for 2d figure"""
 
     def __init__(self, parent=None, width=3, height=3, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
@@ -214,8 +217,6 @@ class RXESWindow(Window):
         self.mlayout.addWidget(load_rxes_button, 1, 0, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.emap_combo, 0, 5, AlignFlag.AlignRight)
         # self.mlayout.addWidget(toolbar, 1, 1, AlignFlag.AlignLeft)
-        # self.mlayout.addWidget(colour_mode_label, 1, 0, AlignFlag.AlignLeft)
-        # self.mlayout.addWidget(self.colour_mode, 1, 0, AlignFlag.AlignRight)
         self.mlayout.addWidget(self.refresh_button, 1, 1, 1, 2, AlignFlag.AlignTop)
         self.mlayout.addWidget(emap_load_button, 1, 5, AlignFlag.AlignRight)
         self.mlayout.addWidget(norm_area, 2, 0)
@@ -252,16 +253,19 @@ class RXESWindow(Window):
     def normSwitch(self):
         self.normalize = not self.normalize
 
+    # flips whether or not to log intensities
     def logSwitch(self):
         self.use_log = not self.use_log
 
+    # sets whether or not to use transfer energy
     def transferSwitch(self):
         self.transfer = not self.transfer
 
+    # sets whether or not to use elastic removal
     def elaSwitch(self):
         self.ela_remove = not self.ela_remove
 
-    # runs when the window is closed
+    # handles close event so a confirmation window can appear
     def closeEvent(self, event):
         # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
         if not self.no_close_dialog:
@@ -281,6 +285,7 @@ class RXESWindow(Window):
         else:
             event.accept()
 
+    # loads information file
     def loadInfoFile(self):
         directory = LoadInfoData.fileDialog(self)
         if directory[0] == "":
@@ -367,6 +372,7 @@ class RXESWindow(Window):
         self.graph3dSpectra()
         self.graph2dSpectra()
 
+    # sets spectra data, including creating Spectrum classes
     def setData(self, scanset):
 
         new_set = []
@@ -440,6 +446,7 @@ class RXESWindow(Window):
                         Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
                     )
 
+    # creates the checkbox layout (and recreates it to fix formatting)
     def addDataCheckbox(self):
 
         try:
@@ -461,6 +468,7 @@ class RXESWindow(Window):
         self.checks.setWidget(self.checks_widget)
         self.mlayout.addWidget(self.checks, 4, 0)
 
+    # sets data and graphs data all in one (for simpler calling)
     def refresh(self):
         self.setData(self.scanset)
         self.graph3dSpectra()
@@ -621,6 +629,7 @@ class RXESWindow(Window):
         self.incsc.plotItem.plot(inc[0], inc[1], pen=pg.mkPen(color="k", width=2))
 
 
+# creates an RXES window when file is run
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QtGui.QIcon("icons/spc-logo-nobg.png"))

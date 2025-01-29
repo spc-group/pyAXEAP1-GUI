@@ -26,6 +26,7 @@ def handler(msg_type, msg_log, msg_string):
     pass
 
 
+# see handler above
 QtCore.qInstallMessageHandler(handler)
 
 
@@ -171,6 +172,7 @@ class XESWindow(Window):
 
         self.show()
 
+    # handles close event so a confirmation window can appear
     def closeEvent(self, event):
         # The no_close_dialog exists so the window can be closed by a MainWindow with no issue
         if not self.no_close_dialog:
@@ -217,11 +219,13 @@ class XESWindow(Window):
         LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames))
         scanset = []
         data = calcDataForSpectra(emap)
+        hnames = {}
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
             spectra = calcSpectra(i, emap, data, dtype)
             if type(spectra) is list:
+                hnames[i] = len(spectra)
                 scanset += spectra
             else:
                 scanset.append(spectra)
@@ -245,15 +249,26 @@ class XESWindow(Window):
             colours = colourGen(scanlen, None, cols, True)
         else:
             colours = colourGen(scanlen, colour_index)
-        self.spectra = [
-            Spectrum(
-                self,
-                scanset[i],
-                colours[i],
-                i + 3,
-            )
-            for i, _ in enumerate(scanset)
-        ]
+        if dtype == "h5py":
+            names = []
+            for i in hnames:
+                n = hnames[i]
+                names += [i + f"-{j}" for j in range(n)]
+
+            self.spectra = [
+                Spectrum(self, scanset[i], colours[i], i + 3, names[i])
+                for i, _ in enumerate(scanset)
+            ]
+        else:
+            self.spectra = [
+                Spectrum(
+                    self,
+                    scanset[i],
+                    colours[i],
+                    i + 3,
+                )
+                for i, _ in enumerate(scanset)
+            ]
 
         self.disp_spectra = self.spectra.copy()
 
@@ -282,15 +297,18 @@ class XESWindow(Window):
 
         self.refreshSpectra()
 
+    # sets colours for custom gradient
     def setCustomColours(self):
         self.ColourSelects = ColourSelect(
             self, self.custom_colour_one, self.custom_colour_two
         )
 
+    # runs stack and graph in one function (saves space)
     def refreshSpectra(self):
         self.stackSpectra()
         self.graphSpectra()
 
+    # selects all spectra
     def allSpectra(self):
         for i in self.spectra:
             i.restack_now = False
@@ -298,6 +316,7 @@ class XESWindow(Window):
             i.restack_now = True
         self.refreshSpectra()
 
+    # deselects all spectra
     def noSpectra(self):
         for i in self.spectra:
             i.restack_now = False
@@ -305,6 +324,7 @@ class XESWindow(Window):
             i.restack_now = True
         self.refreshSpectra()
 
+    # inverts spectra selection
     def invertSpectra(self):
         for i in self.spectra:
             i.restack_now = False
@@ -315,6 +335,7 @@ class XESWindow(Window):
             i.restack_now = True
         self.refreshSpectra()
 
+    # calculates the average spectra
     def setAverageSpectra(self):
         energies = []
         intensities = []
@@ -329,6 +350,7 @@ class XESWindow(Window):
             )
         return (energies, intensities)
 
+    # does the math to find how the spectra should be drawn
     def stackSpectra(self):
         stack_type = self.stack_type_box.currentIndex()
         if stack_type == 2:
@@ -349,6 +371,7 @@ class XESWindow(Window):
                     inc = amt * index
                     s.increaseIntensity(inc, j)
 
+    # draws the spectra to the figure
     def graphSpectra(self):
         if self.average_spectra is not None:
             s = self.average_spectra
@@ -377,11 +400,13 @@ class XESWindow(Window):
                     i.energies, i.current, pen=pg.mkPen(color=i.colour, width=2)
                 )
 
+    # disables given spectrum
     def removeSpectrum(self, spectrum):
         self.disp_spectra.remove(spectrum)
         if spectrum.restack_now:
             self.refreshSpectra()
 
+    # enables given spectrum
     def addSpectrum(self, spectrum):
         num = self.spectra.index(spectrum)
         count = 0
@@ -392,6 +417,7 @@ class XESWindow(Window):
         if spectrum.restack_now:
             self.refreshSpectra()
 
+    # saves given spectra (or all if none are given)
     def saveSpectra(self, spectra=None):
         if spectra is None:
             spectra = self.spectra
@@ -462,14 +488,17 @@ class XESWindow(Window):
             direct.write(text)
             direct.close()
 
+    # runs saveSpectra with all selected
     def saveAllSpectra(self):
         self.saveSpectra()
 
+    # saves enables spectra only
     def saveDispSpectra(self):
         if not len(self.disp_spectra):
             self.error = ErrorWindow("nodispSpec")
         self.saveSpectra(self.disp_spectra)
 
+    # saves the average spectrum (recalculates before saving)
     def saveAvgSpectrum(self):
         try:
             self.average_spectra = self.setAverageSpectra()
@@ -478,6 +507,7 @@ class XESWindow(Window):
         self.saveSpectra(self.average_spectra)
 
 
+# creates an XES window when file is run
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QtGui.QIcon("icons/spc-logo-nobg.png"))

@@ -64,6 +64,7 @@ def getCoordsFromScans(
     scans: core.Scan | core.ScanSet | h5py.Dataset,
     reorder: bool = False,
     cuts: tuple = (5, 100),
+    dtype: str = None,
 ):
     """Gets the coordinates and intensities of points from scan objects.
 
@@ -107,13 +108,13 @@ def getCoordsFromScans(
         xval = []
         yval = []
         sval = []
+        for x, _ in enumerate(img):
+            for y, _ in enumerate(img[x]):
+                if img[x][y]:
+                    xval.append(x)
+                    yval.append(y)
+                    sval.append(img[x][y])
         if reorder:
-            for x, _ in enumerate(img):
-                for y, _ in enumerate(img[x]):
-                    if img[x][y]:
-                        xval.append(x)
-                        yval.append(y)
-                        sval.append(img[x][y])
             points = [xval, yval, sval]
         else:
             points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
@@ -126,35 +127,33 @@ def getCoordsFromScans(
             xval = []
             yval = []
             sval = []
+            for x, _ in enumerate(img):
+                for y, _ in enumerate(img[x]):
+                    xval.append(x)
+                    yval.append(y)
+                    sval.append(img[x][y])
             if reorder:
-                for x, _ in enumerate(img):
-                    for y, _ in enumerate(img[x]):
-                        xval.append(x)
-                        yval.append(y)
-                        sval.append(img[x][y])
                 points.append([xval, yval, sval])
             else:
                 points.append([(a, b, c) for a, b, c in zip(xval, yval, sval)])
 
-    elif type(scans) is h5py.Dataset:
-        raise NotImplementedError("H5 calib files are a work in progress.")
-    #     img = scans[0, 0]
-    #     points = []
-    #     img[np.logical_or(img < mask[0], img > mask[1])] = 0
-    #     xval = []
-    #     yval = []
-    #     sval = []
-    #     for x, _ in enumerate(img):
-    #         for y, _ in enumerate(img[x]):
-    #             if img[x][y]:
-    #                 xval.append(x)
-    #                 yval.append(y)
-    #                 sval.append(img[x][y])
+    elif dtype == "h5py":
+        img = scans
+        img[np.logical_or(img < mask[0], img > mask[1])] = 0
+        xval = []
+        yval = []
+        sval = []
+        for y, _ in enumerate(img):
+            for x, _ in enumerate(img[y]):
+                if img[y][x]:
+                    xval.append(x)
+                    yval.append(y)
+                    sval.append(img[y][x])
 
-    #     if reorder:
-    #         points = [xval, yval, sval]
-    #     else:
-    #         points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
+        if reorder:
+            points = [xval, yval, sval]
+        else:
+            points = [(a, b, c) for a, b, c in zip(xval, yval, sval)]
 
     spots = []
     if reorder:
@@ -171,7 +170,7 @@ def getCoordsFromScans(
 
 
 # for each roi: roi = (lox, loy, hix, hiy)
-def calcEnergyMap(scanset: core.ScanSet, points: tuple, rois: tuple):
+def calcEnergyMap(dims: tuple, energies: tuple, points: tuple, rois: tuple):
     """Generates an energy map for a given scanset, in given regions.
 
     NOTE: It is assumed that the size of 'scanset' is the same as 'points'.
@@ -206,12 +205,12 @@ def calcEnergyMap(scanset: core.ScanSet, points: tuple, rois: tuple):
         This is the energy map created for the given points.
     """
 
-    emap = np.full(scanset.dims, float(-1))
-    energies = [s.meta["IncidentEnergy"] for s in scanset]
+    emap = np.full(dims, float(-1))
+    # energies = [s.meta["IncidentEnergy"] for s in scanset]
     for roi in rois:
         lox, loy, hix, hiy = roi
         linemodels = {}
-        for i, _ in enumerate(scanset):
+        for i, _ in enumerate(points):
             scanpoints = zip(points[i][0], points[i][1], points[i][2])
             scanx, scany, scanw = [], [], []
             for x, y, w in scanpoints:

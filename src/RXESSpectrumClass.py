@@ -36,6 +36,7 @@ class Dataset:
         self.box.stateChanged.connect(self.switch)
 
     def switch(self):
+        """enables/disables the dataset (flips enabled to disabled and vice versa)"""
         self.enabled = not self.enabled
         self.disabled = not self.disabled
 

@@ -63,7 +63,7 @@ class SettingsWindow(QtWidgets.QDialog):
             confirm = False
         else:
             confirm = True
-        self.confirm_box = QtWidgets.QCheckBox("Confirm on close:")
+        self.confirm_box = QtWidgets.QCheckBox("Confirm on close")
         self.confirm_box.setChecked(confirm)
 
         # save and cancel buttons

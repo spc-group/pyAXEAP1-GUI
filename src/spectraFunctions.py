@@ -84,10 +84,10 @@ def calcSpectra(
                 scans.append(core.Scan.loadFromPath(i))
             scans = core.ScanSet(scans)
     elif dtype == "h5py":
-        scans = []
         images = LoadH5Data.loadData(file_dir)
+        scans = []
         for img in images:
-            scans.append(core.Scan(img))
+            scans.append(core.Scan(np.swapaxes(img, 0, 1)))
         scans = core.ScanSet(scans)
     else:
         raise TypeError(f"unknown dtype {dtype}, only accepts tif or h5py")
@@ -110,7 +110,10 @@ def calcSpectra(
             for x in range(evals.shape[0]):
                 for y in range(evals.shape[1]):
                     if evals[x, y] > 0:
-                        emap_energy_weights.append(img[x, y])
+                        try:
+                            emap_energy_weights.append(img[x, y])
+                        except IndexError:
+                            emap_energy_weights.append(0)
             hist_intensities, _ = np.histogram(
                 emap_energies,
                 bins=len(energies),
@@ -129,7 +132,10 @@ def calcSpectra(
         for x in range(evals.shape[0]):
             for y in range(evals.shape[1]):
                 if evals[x, y] > 0:
-                    emap_energy_weights.append(img[x, y])
+                    try:
+                        emap_energy_weights.append(img[x, y])
+                    except IndexError:
+                        emap_energy_weights.append(0)
         hist_intensities, _ = np.histogram(
             emap_energies,
             bins=len(energies),
