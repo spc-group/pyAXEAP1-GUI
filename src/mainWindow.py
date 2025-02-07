@@ -81,6 +81,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ax = pg.ScatterPlotItem()
         self.sc.addItem(self.ax)
 
+        # mouse movement label
+        self.mouse_label = QtWidgets.QLabel()
+
+        # mouse movement detector (for main graph)
+        def mouseMoved(evt):
+            pos = evt
+            if self.sc.sceneRect().contains(pos):
+                mouse_point = self.sc.plotItem.vb.mapSceneToView(pos)
+                x = round(mouse_point.x(), 1)
+                y = round(mouse_point.y(), 1)
+                self.mouse_label.setText(f"x: {str(x)}, y: {str(y)}")
+
+        self.sc.scene().sigMouseMoved.connect(mouseMoved)
+
         # button for opening calibration data
         cali_button = QtWidgets.QPushButton("Import Images...")
         cali_button.setFixedSize(120, 30)
@@ -177,6 +191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mlayout.addWidget(xes_button, 1, 0, AlignFlag.AlignCenter)
         self.mlayout.addWidget(rxes_button, 1, 1, AlignFlag.AlignCenter)
         self.mlayout.addWidget(self.set_button, 1, 2, AlignFlag.AlignLeft)
+        self.mlayout.addWidget(self.mouse_label, 1, 2, AlignFlag.AlignRight)
         self.mlayout.addWidget(
             emap_area, 2, 0, 1, 2, AlignFlag.AlignLeft | AlignFlag.AlignTop
         )
@@ -252,8 +267,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.calibfiledir = LoadH5Data.fileDialog(self)
             if self.calibfiledir is not None:
                 images = []
+                energies = []
                 for i in self.calibfiledir:
-                    images.append(LoadH5Data.loadData(i))
+                    img, en, _ = LoadH5Data.loadData(i)
+                    images.append(img)
+                    energies += en
 
                 self.calibscans = []
                 for imgs in images:
@@ -298,7 +316,9 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
         elif self.load_data_type == "h5py":
             self.calib_energies = [
-                CalibFile(self, c, str(i), i + 1, (len(c[0]), len(c)))
+                CalibFile(
+                    self, c, str(i), i + 1, (len(c[0]), len(c)), energy=energies[i]
+                )
                 for i, c in enumerate(self.calibscans)
             ]
 
@@ -320,40 +340,26 @@ class MainWindow(QtWidgets.QMainWindow):
         if minc > maxc:
             self.error = ErrorWindow("minmaxcuts")
             return
+        enabled_energies = [i for i in self.calib_energies if i.enabled]
         self.LoadWindow = LoadingBarWindow(
-            "Loading calibration data...", len(self.calib_energies)
+            "Loading calibration data...", len(enabled_energies)
         )
         old_points = self.points
         self.points = []
         old_spots = self.spots
         self.spots = []
-        if self.load_data_type == "tif":
-            for i in self.calib_energies:
-                if self.LoadWindow.wasCanceled():
-                    self.points = old_points
-                    self.spots = old_spots
-                    return
-                if i.enabled:
-                    points, spots = getCoordsFromScans(
-                        i.data, reorder=True, cuts=(minc, maxc)
-                    )
-                    self.points.append(points)
-                    self.spots.append(spots)
-                self.LoadWindow.add()
-                QtWidgets.QApplication.processEvents()
-        elif self.load_data_type == "h5py":
-            for i in self.calib_energies:
-                if self.LoadWindow.wasCanceled():
-                    self.points = old_points
-                    return
-                if i.enabled:
-                    points, spots = getCoordsFromScans(
-                        i.data, reorder=True, cuts=(minc, maxc), dtype="h5py"
-                    )
-                    self.points.append(points)
-                    self.spots.append(spots)
-                self.LoadWindow.add()
-                QtWidgets.QApplication.processEvents()
+        for i in enabled_energies:
+            if self.LoadWindow.wasCanceled():
+                self.points = old_points
+                self.spots = old_spots
+                return
+            points, spots = getCoordsFromScans(
+                i.data, reorder=True, cuts=(minc, maxc), dtype=self.load_data_type
+            )
+            self.points.append(points)
+            self.spots.append(spots)
+            self.LoadWindow.add()
+            QtWidgets.QApplication.processEvents()
 
         if runinit:
             self.initDrawCalibPoints()

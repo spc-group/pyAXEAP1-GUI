@@ -73,6 +73,8 @@ def calcSpectra(
     :obj:`core.spectra.Spectra`
     or list of :obj:`core.spectra.Spectra`
     """
+    energy = []
+    i0 = []
     if dtype == "tif" or dtype == "tiff" or dtype is None:
         try:
             scans = core.ScanSet.loadFromPath(file_dir)
@@ -84,7 +86,7 @@ def calcSpectra(
                 scans.append(core.Scan.loadFromPath(i))
             scans = core.ScanSet(scans)
     elif dtype == "h5py":
-        images = LoadH5Data.loadData(file_dir)
+        images, energy, i0 = LoadH5Data.loadData(file_dir)
         scans = []
         for img in images:
             scans.append(core.Scan(np.swapaxes(img, 0, 1)))
@@ -145,4 +147,4 @@ def calcSpectra(
         spectvals = np.stack((energies, hist_intensities)).T
         spectra = core.Spectra(spectvals[:, 0], spectvals[:, 1])
 
-    return spectra
+    return spectra, energy, i0

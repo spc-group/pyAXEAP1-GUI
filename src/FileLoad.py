@@ -66,31 +66,49 @@ class LoadH5Data(LoadFile):
 
         def getImages(node):
             images = []
+            energies = []
+            i0s = []
             for key in node.keys():
                 child_node = node[key]
-                if hasattr(child_node, "dtype"):
+                if key == "energy":
+                    energies.append(child_node)
+                elif key == "I0_ds_v2-net_current":
+                    i0s.append(child_node)
+                elif hasattr(child_node, "dtype"):
                     if key == "eiger_image":
                         images.append(child_node)
                     elif key.endswith("_image"):
                         images.append(child_node)
                 elif hasattr(child_node, "keys"):
-                    im = getImages(child_node)
+                    im, en, i0 = getImages(child_node)
                     for i in im:
                         images.append(i)
-            return images
+                    for e in en:
+                        energies.append(e)
+                    for i in i0:
+                        i0s.append(i)
+            return images, energies, i0s
 
         points = []
+        energy = []
+        i0 = []
         if isinstance(directory, Sequence) and not isinstance(directory, (str,)):
             for d in directory:
                 points += LoadH5Data.loadData(d)
 
         else:
             with h5py.File(directory, mode="r") as fd:
-                images = getImages(fd)
+                images, energies, i0s = getImages(fd)
                 for imgs in images:
                     for img in imgs:
                         points.append(img[0])
-        return points
+                if energies:
+                    for ens in energies:
+                        energy += list(ens)
+                if i0s:
+                    for i in i0s:
+                        i0 += list(i)
+        return points, energy, i0
 
 
 class LoadInfoData(LoadFile):

@@ -11,7 +11,9 @@ class CalibFile:
     Used to create box of all files, and add spinboxes per file.
     """
 
-    def __init__(self, parent, data, name, row, dims, checked: bool = True):
+    def __init__(
+        self, parent, data, name, row, dims, checked: bool = True, energy: int = None
+    ):
         self.name = name
         self.parent = parent
         self.data = data
@@ -32,6 +34,11 @@ class CalibFile:
         self.val.setMaximum(1000000)
         self.val.setDecimals(4)
         self.val.setMinimumWidth(140)
+        if energy is not None:
+            try:
+                self.val.setValue(int(energy))
+            except Exception:
+                pass
         self.parent.calib_grid.addWidget(self.check, row, 0, AlignFlag.AlignLeft)
         self.parent.calib_grid.addWidget(self.val, row, 2, AlignFlag.AlignLeft)
 

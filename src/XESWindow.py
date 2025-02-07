@@ -55,6 +55,20 @@ class XESWindow(Window):
             text="Emission Energy", **label_style
         )
 
+        # mouse movement label
+        self.mouse_label = QtWidgets.QLabel()
+
+        # mouse movement detector (for main graph)
+        def mouseMoved(evt):
+            pos = evt
+            if self.sc.sceneRect().contains(pos):
+                mouse_point = self.sc.plotItem.vb.mapSceneToView(pos)
+                x = round(mouse_point.x(), 1)
+                y = round(mouse_point.y(), 1)
+                self.mouse_label.setText(f"x: {str(x)}, y: {str(y)}")
+
+        self.sc.scene().sigMouseMoved.connect(mouseMoved)
+
         # Defaults
         if self.parent is None:
             self.no_close_dialog = True
@@ -163,8 +177,9 @@ class XESWindow(Window):
         self.mlayout.addWidget(self.colour_box, 0, 1, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.custom_col_button, 0, 2, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.emap_combo, 0, 3, AlignFlag.AlignRight)
+        self.mlayout.addWidget(self.refresh_button, 1, 0, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.stack_type_box, 1, 1, AlignFlag.AlignLeft)
-        self.mlayout.addWidget(self.refresh_button, 1, 2, AlignFlag.AlignLeft)
+        self.mlayout.addWidget(self.mouse_label, 1, 2, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.emap_load_button, 1, 3, AlignFlag.AlignRight)
         self.mlayout.setColumnMinimumWidth(2, 500)
 
@@ -223,7 +238,7 @@ class XESWindow(Window):
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
-            spectra = calcSpectra(i, emap, data, dtype)
+            spectra = calcSpectra(i, emap, data, dtype)[0]
             if type(spectra) is list:
                 hnames[i] = len(spectra)
                 scanset += spectra

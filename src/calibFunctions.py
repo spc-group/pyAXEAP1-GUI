@@ -138,7 +138,7 @@ def getCoordsFromScans(
                 points.append([(a, b, c) for a, b, c in zip(xval, yval, sval)])
 
     elif dtype == "h5py":
-        img = scans
+        img = scans.copy()
         img[np.logical_or(img < mask[0], img > mask[1])] = 0
         xval = []
         yval = []
@@ -157,13 +157,14 @@ def getCoordsFromScans(
 
     spots = []
     if reorder:
-        if type(points[0][0]) is not list:
-            for x, y, s in zip(points[0], points[1], points[2]):
-                spots.append({"pos": (x, y), "size": s})
-        else:
-            for i in points:
-                for x, y, s in zip(i[0], i[1], i[2]):
+        if points[0]:
+            if type(points[0][0]) is not list:
+                for x, y, s in zip(points[0], points[1], points[2]):
                     spots.append({"pos": (x, y), "size": s})
+            else:
+                for i in points:
+                    for x, y, s in zip(i[0], i[1], i[2]):
+                        spots.append({"pos": (x, y), "size": s})
     else:
         pass
     return points, spots

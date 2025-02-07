@@ -332,7 +332,10 @@ class RXESWindow(Window):
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
-            spectra = calcSpectra(i, emap, data, dtype)
+            spectra, energy, i0 = calcSpectra(i, emap, data, dtype)
+            if energy and len(energy) == len(spectra):
+                self.incident_energy = energy
+                self.i0 = i0
             if type(spectra) is list:
                 scanset += spectra
             else:
@@ -355,7 +358,8 @@ class RXESWindow(Window):
         #     self.scanset = scanset
 
         dname = self.filenames[0]
-        dname = dname[: dname.rfind("/")]
+        if dtype == "tif":
+            dname = dname[: dname.rfind("/")]
         dname = dname[dname.rfind("/") + 1 :]
         self.foldernames.append(dname)
         dataset = Dataset(self, dname, scanset, len(self.datasets))
@@ -373,7 +377,7 @@ class RXESWindow(Window):
         self.graph2dSpectra()
 
     # sets spectra data, including creating Spectrum classes
-    def setData(self, scanset):
+    def setData(self, scanset):  #'scanset' is ignored, but it's easier to keep it here
 
         new_set = []
         for dataset in self.datasets:
