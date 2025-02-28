@@ -10,16 +10,12 @@ loadData loads and returns data in a readible form."""
 
 from PyQt6.QtWidgets import QFileDialog
 import pathlib
-from calibFunctions import loadCalib, getCoordsFromScans
+from calibFunctions import loadCalib
 from openpyxl import load_workbook
 from ErrorWindow import ErrorWindow
 import axeap.core as core
 
-from tiled.client import from_uri
-from tqdm.notebook import tqdm
 import h5py
-from rich import print as rprint
-from rich.tree import Tree
 from collections.abc import Sequence
 
 desktop_directory = str(pathlib.Path.home() / "Desktop")

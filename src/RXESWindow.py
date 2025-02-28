@@ -1,8 +1,6 @@
 # :author: Alexander Berno
 """RXES Window"""
 
-from axeap.core import Scan
-import numpy as np
 import pyqtgraph as pg
 import sys
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -12,6 +10,8 @@ from matplotlib.backends.backend_qtagg import (
     # NavigationToolbar2QT as NavigationToolbar,
 )
 import matplotlib
+import numpy as np
+from scipy.interpolate import interp1d
 
 matplotlib.use("QtAgg")
 
@@ -32,6 +32,17 @@ AlignFlag = QtCore.Qt.AlignmentFlag
 # This is to remove Qt warning messages (for parts that are known to not be problems)
 def handler(msg_type, msg_log, msg_string):
     pass
+
+
+# finds closest value to a given value (for transfer energy)
+def find_closest(lst, k):
+    closest_num = lst[0]
+    for num in lst:
+        if abs(num - k) < abs(closest_num - k):
+            closest_num = num
+        if num > k:
+            break
+    return closest_num
 
 
 # see handler above
@@ -82,6 +93,16 @@ class RXESWindow(Window):
         self.scanset = []
         self.foldernames = []
         self.datasets = []
+        self.old_2d = {
+            "data": [],
+            "use": {
+                "tr": self.transfer,
+                "norm": self.normalize,
+                "ela": self.ela_remove,
+                "log": self.use_log,
+            },
+        }
+        self.data_changed = False
 
         # energy map assignment (if parent has an energy map)
         if self.parent is None:
@@ -189,6 +210,9 @@ class RXESWindow(Window):
         # "elastic removal" checkbox
         ela_check = QtWidgets.QCheckBox("Ela. Removal")
         ela_check.stateChanged.connect(self.elaSwitch)
+        ela_check.setToolTip(
+            "Elastic Removal. Removes peaks where Incident equals Emission."
+        )
 
         # add everything to norm_area
         norm_grid.addWidget(info_load_button, 0, 0, 1, 2)
@@ -244,10 +268,20 @@ class RXESWindow(Window):
         # self.ax3d.set_zlabel("Intensity")
         self.ax3d.view_init(25, 225, 0)
 
+    def fixax3dtr(self):
+        self.ax3d.set_xlabel("Incident")
+        self.ax3d.set_ylabel("Transfer")
+        # self.ax3d.set_zlabel("Intensity")
+        self.ax3d.view_init(25, 225, 0)
+
     # Sets labels for contour map
     def fixax2d(self):
         self.ax2d.set_xlabel("Incident")
         self.ax2d.set_ylabel("Emission")
+
+    def fixax2dtr(self):
+        self.ax2d.set_xlabel("Incident")
+        self.ax2d.set_ylabel("Transfer")
 
     # flips whether or not to normalize
     def normSwitch(self):
@@ -373,6 +407,7 @@ class RXESWindow(Window):
             self.addDataCheckbox()
             return
 
+        self.data_changed = True
         self.graph3dSpectra()
         self.graph2dSpectra()
 
@@ -481,19 +516,110 @@ class RXESWindow(Window):
     # This is the 3d graph
     def graph3dSpectra(self):
         self.ax3d.clear()
-        self.fixax3d()
+        if self.transfer:
+            self.fixax3dtr()
+        else:
+            self.fixax3d()
+        #
+        #
+        #
+        #
+        #
+        # mininte = 100000
+        # maxinte = 0
+        # minem = 100000
+        # maxem = 0
+        # mininc = 100000
+        # maxinc = 0
+        # for s in self.spectra:
+        #     if max(s.inte) > maxinte:
+        #         maxinte = max(s.inte)
+        #     if min(s.inte) < mininte:
+        #         mininte = min(s.inte)
+        #     if max(s.em) > maxem:
+        #         maxem = max(s.em)
+        #     if min(s.em) < minem:
+        #         minem = min(s.em)
+        #     if max(s.inc) > maxinc:
+        #         maxinc = max(s.inc)
+        #     if min(s.inc) < mininc:
+        #         mininc = min(s.inc)
+
+        # y = list(np.arange(minem, maxem, 1))
+        # z = list(np.zeros_like(y))
+        # for i, _ in enumerate(z):
+        #     z[i] = list(np.zeros(len(self.spectra)))
+        # x = []
+        # for k, s in enumerate(self.spectra):
+        #     x.append(s.inc[0])
+        #     added = []
+        #     for i, e in enumerate(s.em):
+        #         ind = y.index(find_closest(y, e))
+        #         if ind in added:
+        #             continue
+        #         else:
+        #             added.append(ind)
+        #         z[ind][k] = s.inte[i]
+
+        # ### An attempt at interpolation to account for empty spaces (not currently "needed")
+        # for i, _ in enumerate(z):
+        #     new_zi = []
+        #     if all(j == 0 for j in z[i]):
+        #         continue
+        #     indexes = []
+        #     for j, r in enumerate(z[i]):
+        #         if r != 0:
+        #             indexes.append(j)
+        #     for j in range(len(indexes) - 1):
+        #         xs = [indexes[j], indexes[j + 1]]
+        #         ys = [z[i][xs[0]], z[i][xs[1]]]
+        #         new_zi.append(ys[0])
+        #         for k in range(xs[1] - xs[0] - 1):
+        #             new_zi.append(ys[0] + (ys[1] - ys[0]) / (xs[1] - xs[0]) * (k + 1))
+        #     new_zi = z[i][: indexes[0]] + new_zi + z[i][indexes[-1] :]
+        #     z[i] = new_zi
+
+        # print(len(x), len(y), len(z), len(z[0]))
+        # x = np.asarray(x)
+        # y = np.asarray(y)
+        # z = np.asarray(z)
+
+        # self.ax3d.plot_surface(x, y, z)
+        #
+        #
+        #
+        #
+
         self.refresh_button.setDisabled(False)
 
         if not len(self.spectra):
             self.sc3d.draw_idle()
             return
 
-        for _, s in enumerate(self.spectra):
+        for i, s in enumerate(self.spectra):
+
+            if self.transfer and i < len(self.spectra) - 1:
+                try:
+                    if s.em[-1] > self.spectra[i + 1].em[-1]:
+                        continue
+                except IndexError:
+                    print(i, len(self.spectra))
+
             self.ax3d.plot3D(s.inc, s.em, s.inte, c=("b", 0.3))
         self.sc3d.draw_idle()
 
     # This is the contour map
     def graph2dSpectra(self):
+        # skips drawing 2d if it hasn't changed
+        if not (
+            self.data_changed
+            or self.transfer != self.old_2d["use"]["tr"]
+            or self.normalize != self.old_2d["use"]["norm"]
+            or self.ela_remove != self.old_2d["use"]["ela"]
+            or self.use_log != self.old_2d["use"]["log"]
+        ):
+            return
+
         # min and max values used for analysis later
         # these values are used in RXESWindow.calcEmInc
 
@@ -503,11 +629,11 @@ class RXESWindow(Window):
             self.sc2d.draw_idle()
             return
 
-        mininte = 1000
+        mininte = 100000
         maxinte = 0
         minem = 100000
         maxem = 0
-        mininc = 1000
+        mininc = 100000
         maxinc = 0
         for s in self.spectra:
             if max(s.inte) > maxinte:
@@ -530,37 +656,82 @@ class RXESWindow(Window):
         self.select_inc.setDisabled(False)
         self.em_inc_button.setDisabled(False)
 
-        # y_range = [100000, -100000]  #
-        # for k, s in enumerate(self.spectra): #
-        #     for i, c in enumerate(s.em): #
-        #         if c < y_range[0]:  #
-        #             y_range[0] = c  #
-        #         elif c > y_range[1]:  #
-        #             y_range[1] = c  #
+        if self.transfer:
+            y = list(np.arange(minem, maxem, 1))
+            z = list(np.zeros_like(y))
+            for i, _ in enumerate(z):
+                z[i] = list(np.zeros(len(self.spectra)))
+            x = []
+            for k, s in enumerate(self.spectra):
+                x.append(s.inc[0])
+                added = []
+                for i, e in enumerate(s.em):
+                    ind = y.index(find_closest(y, e))
+                    if ind in added:
+                        continue
+                    else:
+                        added.append(ind)
+                    z[ind][k] = s.inte[i]
 
-        x, y, z = [], [], []
-        change_y = True
-        for k, s in enumerate(self.spectra):
-            for i, c in enumerate(s.inc):
-                if change_y:
-                    y.append(s.em[i])
-                try:
-                    z[k].insert(i, s.inte[i])
-                except IndexError:
-                    z.insert(k, [s.inte[i]])
-            x.append(c)
-            change_y = False
+            ### An attempt at interpolation to account for empty spaces (not currently "needed")
+            for i, _ in enumerate(z):
+                new_zi = []
+                if all(j == 0 for j in z[i]):
+                    continue
+                indexes = []
+                for j, r in enumerate(z[i]):
+                    if r != 0:
+                        indexes.append(j)
+                for j in range(len(indexes) - 1):
+                    xs = [indexes[j], indexes[j + 1]]
+                    ys = [z[i][xs[0]], z[i][xs[1]]]
+                    new_zi.append(ys[0])
+                    for k in range(xs[1] - xs[0] - 1):
+                        new_zi.append(
+                            ys[0] + (ys[1] - ys[0]) / (xs[1] - xs[0]) * (k + 1)
+                        )
+                new_zi = z[i][: indexes[0]] + new_zi + z[i][indexes[-1] :]
+                z[i] = new_zi
 
-        new_z = []
-        for i, _ in enumerate(z):
-            for j, _ in enumerate(z[i]):
-                try:
-                    new_z[j].append(z[i][j])
-                except IndexError:
-                    new_z.insert(j, [z[i][j]])
+            new_z = z
+        else:
+            x, y, z = [], [], []
+            change_y = True
+            for k, s in enumerate(self.spectra):
+                for i, c in enumerate(s.inc):
+                    if change_y:
+                        y.append(s.em[i])
+                    try:
+                        z[k].insert(i, s.inte[i])
+                    except IndexError:
+                        z.insert(k, [s.inte[i]])
+                x.append(c)
+                change_y = False
+
+            new_z = []
+            for i, _ in enumerate(z):
+                for j, _ in enumerate(z[i]):
+                    try:
+                        new_z[j].append(z[i][j])
+                    except IndexError:
+                        new_z.insert(j, [z[i][j]])
+
+        self.old_2d = {
+            "data": [x, y, new_z],
+            "use": {
+                "tr": self.transfer,
+                "norm": self.normalize,
+                "ela": self.ela_remove,
+                "log": self.use_log,
+            },
+        }
+        self.data_changed = False
 
         self.ax2d.cla()
-        self.fixax2d()
+        if self.transfer:
+            self.fixax2dtr()
+        else:
+            self.fixax2d()
         self.map_type = self.colour_mode.currentData()
         if self.map_type == "contour":
             self.ax2d.contourf(x, y, new_z, levels=14, extend="both", cmap="viridis")

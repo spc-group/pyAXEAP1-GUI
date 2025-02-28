@@ -120,7 +120,7 @@ class Spectrum:
                     self.inte[b] = avg
 
         if tr:
-            self.em = tuple(abs(x - y) for x, y in zip(self.em, self.inc))
+            self.em = tuple(abs(x - y) for x, y in zip(self.inc, self.em))
 
         try:
             t = self.parent.filenames[num]
