@@ -133,6 +133,49 @@ class RXESWindow(Window):
         # self.ax2d = pg.ScatterPlotItem()
         # self.sc2d.addItem(self.ax2d)
 
+        # Menu Bar
+        menubar = QtWidgets.QMenuBar()
+        self.setMenuBar(menubar)
+
+        # File Menu
+        filemenu = QtWidgets.QMenu("Save", menubar)
+
+        # adding the file menu to the menu bar
+        menubar.addAction(filemenu.menuAction())
+        menubar.setGeometry(0, 0, 800, 22)
+        filemenu.setFixedSize(240, 136)
+
+        # Save all spectra "button"
+        self.save_all_button = QtGui.QAction("Save All Spectra As...")
+        self.save_all_button.triggered.connect(self.saveAllSpectra)
+        self.save_all_button.setDisabled(True)
+        self.save_all_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_all_button)
+        filemenu.addSeparator()
+
+        # Save selected spectra "button"
+        self.save_disp_button = QtGui.QAction("Save Selected Spectra As...")
+        self.save_disp_button.triggered.connect(self.saveDispSpectra)
+        self.save_disp_button.setDisabled(True)
+        self.save_disp_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_disp_button)
+        filemenu.addSeparator()
+
+        # Save emission slice "button"
+        self.save_em_button = QtGui.QAction("Save Emission Slice As...")
+        self.save_disp_button.triggered.connect(self.saveEmissionSlice)
+        self.save_em_button.setDisabled(True)
+        self.save_em_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_em_button)
+        filemenu.addSeparator()
+
+        # Save incident slice "button"
+        self.save_inc_button = QtGui.QAction("Save Incident Slice As...")
+        self.save_disp_button.triggered.connect(self.saveIncidentSlice)
+        self.save_inc_button.setDisabled(True)
+        self.save_inc_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_inc_button)
+
         # Emission canvas init
         label_style = {"color": "#444", "font-size": "14pt"}
         self.emsc = pg.plot()
@@ -363,13 +406,17 @@ class RXESWindow(Window):
             "Loading RXES (RIXS) data...", len(self.filenames)
         )
         scanset = []
+        energies = []
+        i0s = []
         for i in self.filenames:
             if LoadWindow.wasCanceled():
                 break
             spectra, energy, i0 = calcSpectra(i, emap, data, dtype)
             if energy and len(energy) == len(spectra):
-                self.incident_energy = energy
-                self.i0 = i0
+                # self.incident_energy = energy
+                # self.i0 = i0
+                energies.append(energy)
+                i0s.append(i0)
             if type(spectra) is list:
                 scanset += spectra
             else:
@@ -396,7 +443,18 @@ class RXESWindow(Window):
             dname = dname[: dname.rfind("/")]
         dname = dname[dname.rfind("/") + 1 :]
         self.foldernames.append(dname)
-        dataset = Dataset(self, dname, scanset, len(self.datasets))
+        if dtype == "h5py":
+            dataset = Dataset(
+                self,
+                dname,
+                scanset,
+                len(self.datasets),
+                energy=energy,
+                i0=i0,
+                enabled=True,
+            )
+        else:
+            dataset = Dataset(self, dname, scanset, len(self.datasets))
         self.datasets.append(dataset)
         self.addDataCheckbox()
 
@@ -408,227 +466,12 @@ class RXESWindow(Window):
             return
 
         self.data_changed = True
+
+        self.setSubLimits()
         self.graph3dSpectra()
         self.graph2dSpectra()
 
-    # sets spectra data, including creating Spectrum classes
-    def setData(self, scanset):  #'scanset' is ignored, but it's easier to keep it here
-
-        new_set = []
-        for dataset in self.datasets:
-            if dataset.enabled:
-                new_set.append(dataset.data)
-
-        scanset = new_set
-        if not len(scanset):
-            self.spectra = []
-            return
-
-        ul = self.use_log
-        tr = self.transfer
-        ela = self.ela_remove
-        if not self.normalize and self.incident_energy is None:
-            # if not multi:
-            #     self.spectra = [
-            #         Spectrum(self, s, i, ul=ul, tr=tr, ela=ela)
-            #         for i, s in enumerate(scanset)
-            #     ]
-            # else:
-            self.spectra = []
-            for i, _ in enumerate(scanset[0]):
-                s = [scanset[j][i] for j, _ in enumerate(scanset)]
-                self.spectra.append(Spectrum(self, s, i, ul=ul, tr=tr, ela=ela))
-        elif self.i0 is None or self.incident_energy is None:
-            self.error = ErrorWindow("noInfoRXES")
-            return True
-
-        else:
-            # if multi:
-            slen = len(scanset[0])
-            # else:
-            #     slen = len(scanset)
-
-            inc = self.incident_energy
-            i0 = self.i0
-
-            inclen = len(inc)
-            i0len = len(i0)
-
-            if self.normalize:
-                if slen != i0len or slen != inclen or i0len != inclen:
-                    self.error = ErrorWindow("NotEnoughData")
-                    return True
-                # if not multi:
-                #     self.spectra = [
-                #         Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
-                #         for i, s in enumerate(scanset)
-                #     ]
-                # else:
-                self.spectra = []
-                for i, _ in enumerate(scanset[0]):
-                    s = [scanset[j][i] for j, _ in enumerate(scanset)]
-                    self.spectra.append(
-                        Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
-                    )
-
-            else:
-                # if not multi:
-                #     self.spectra = [
-                #         Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
-                #         for i, s in enumerate(scanset)
-                #     ]
-                # else:
-                self.spectra = []
-                for i, _ in enumerate(scanset[0]):
-                    s = [scanset[j][i] for j, _ in enumerate(scanset)]
-                    self.spectra.append(
-                        Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
-                    )
-
-    # creates the checkbox layout (and recreates it to fix formatting)
-    def addDataCheckbox(self):
-
-        try:
-            self.mlayout.removeWidget(self.checks)
-        except Exception:
-            pass
-
-        self.checks = QtWidgets.QScrollArea()
-        self.checks_widget = QtWidgets.QWidget()
-        self.checks_grid = QtWidgets.QGridLayout(self.checks_widget)
-
-        self.datasets = [
-            Dataset(self, d.name, d.data, d.num, d.enabled) for d in self.datasets
-        ]
-        for dataset in self.datasets:
-            self.checks_grid.addWidget(dataset.box, dataset.num, 0)
-            self.checks_grid.setRowMinimumHeight(dataset.num, 20)
-
-        self.checks.setWidget(self.checks_widget)
-        self.mlayout.addWidget(self.checks, 4, 0)
-
-    # sets data and graphs data all in one (for simpler calling)
-    def refresh(self):
-        self.setData(self.scanset)
-        self.graph3dSpectra()
-        self.graph2dSpectra()
-
-    # This is the 3d graph
-    def graph3dSpectra(self):
-        self.ax3d.clear()
-        if self.transfer:
-            self.fixax3dtr()
-        else:
-            self.fixax3d()
-        #
-        #
-        #
-        #
-        #
-        # mininte = 100000
-        # maxinte = 0
-        # minem = 100000
-        # maxem = 0
-        # mininc = 100000
-        # maxinc = 0
-        # for s in self.spectra:
-        #     if max(s.inte) > maxinte:
-        #         maxinte = max(s.inte)
-        #     if min(s.inte) < mininte:
-        #         mininte = min(s.inte)
-        #     if max(s.em) > maxem:
-        #         maxem = max(s.em)
-        #     if min(s.em) < minem:
-        #         minem = min(s.em)
-        #     if max(s.inc) > maxinc:
-        #         maxinc = max(s.inc)
-        #     if min(s.inc) < mininc:
-        #         mininc = min(s.inc)
-
-        # y = list(np.arange(minem, maxem, 1))
-        # z = list(np.zeros_like(y))
-        # for i, _ in enumerate(z):
-        #     z[i] = list(np.zeros(len(self.spectra)))
-        # x = []
-        # for k, s in enumerate(self.spectra):
-        #     x.append(s.inc[0])
-        #     added = []
-        #     for i, e in enumerate(s.em):
-        #         ind = y.index(find_closest(y, e))
-        #         if ind in added:
-        #             continue
-        #         else:
-        #             added.append(ind)
-        #         z[ind][k] = s.inte[i]
-
-        # ### An attempt at interpolation to account for empty spaces (not currently "needed")
-        # for i, _ in enumerate(z):
-        #     new_zi = []
-        #     if all(j == 0 for j in z[i]):
-        #         continue
-        #     indexes = []
-        #     for j, r in enumerate(z[i]):
-        #         if r != 0:
-        #             indexes.append(j)
-        #     for j in range(len(indexes) - 1):
-        #         xs = [indexes[j], indexes[j + 1]]
-        #         ys = [z[i][xs[0]], z[i][xs[1]]]
-        #         new_zi.append(ys[0])
-        #         for k in range(xs[1] - xs[0] - 1):
-        #             new_zi.append(ys[0] + (ys[1] - ys[0]) / (xs[1] - xs[0]) * (k + 1))
-        #     new_zi = z[i][: indexes[0]] + new_zi + z[i][indexes[-1] :]
-        #     z[i] = new_zi
-
-        # print(len(x), len(y), len(z), len(z[0]))
-        # x = np.asarray(x)
-        # y = np.asarray(y)
-        # z = np.asarray(z)
-
-        # self.ax3d.plot_surface(x, y, z)
-        #
-        #
-        #
-        #
-
-        self.refresh_button.setDisabled(False)
-
-        if not len(self.spectra):
-            self.sc3d.draw_idle()
-            return
-
-        for i, s in enumerate(self.spectra):
-
-            if self.transfer and i < len(self.spectra) - 1:
-                try:
-                    if s.em[-1] > self.spectra[i + 1].em[-1]:
-                        continue
-                except IndexError:
-                    print(i, len(self.spectra))
-
-            self.ax3d.plot3D(s.inc, s.em, s.inte, c=("b", 0.3))
-        self.sc3d.draw_idle()
-
-    # This is the contour map
-    def graph2dSpectra(self):
-        # skips drawing 2d if it hasn't changed
-        if not (
-            self.data_changed
-            or self.transfer != self.old_2d["use"]["tr"]
-            or self.normalize != self.old_2d["use"]["norm"]
-            or self.ela_remove != self.old_2d["use"]["ela"]
-            or self.use_log != self.old_2d["use"]["log"]
-        ):
-            return
-
-        # min and max values used for analysis later
-        # these values are used in RXESWindow.calcEmInc
-
-        if not len(self.spectra):
-            self.ax2d.cla()
-            self.fixax2d()
-            self.sc2d.draw_idle()
-            return
-
+    def setSubLimits(self):
         mininte = 100000
         maxinte = 0
         minem = 100000
@@ -656,74 +499,209 @@ class RXESWindow(Window):
         self.select_inc.setDisabled(False)
         self.em_inc_button.setDisabled(False)
 
-        if self.transfer:
-            y = list(np.arange(minem, maxem, 1))
-            z = list(np.zeros_like(y))
-            for i, _ in enumerate(z):
-                z[i] = list(np.zeros(len(self.spectra)))
-            x = []
-            for k, s in enumerate(self.spectra):
-                x.append(s.inc[0])
-                added = []
-                for i, e in enumerate(s.em):
-                    ind = y.index(find_closest(y, e))
-                    if ind in added:
-                        continue
-                    else:
-                        added.append(ind)
-                    z[ind][k] = s.inte[i]
+    # sets spectra data, including creating Spectrum classes
+    def setData(self, scanset):  #'scanset' is ignored, but it's easier to keep it here
 
-            ### An attempt at interpolation to account for empty spaces (not currently "needed")
-            for i, _ in enumerate(z):
-                new_zi = []
-                if all(j == 0 for j in z[i]):
-                    continue
-                indexes = []
-                for j, r in enumerate(z[i]):
-                    if r != 0:
-                        indexes.append(j)
-                for j in range(len(indexes) - 1):
-                    xs = [indexes[j], indexes[j + 1]]
-                    ys = [z[i][xs[0]], z[i][xs[1]]]
-                    new_zi.append(ys[0])
-                    for k in range(xs[1] - xs[0] - 1):
-                        new_zi.append(
-                            ys[0] + (ys[1] - ys[0]) / (xs[1] - xs[0]) * (k + 1)
-                        )
-                new_zi = z[i][: indexes[0]] + new_zi + z[i][indexes[-1] :]
-                z[i] = new_zi
+        new_set = []
+        for dataset in self.datasets:
+            if dataset.enabled:
+                new_set.append((dataset.data, dataset.energy, dataset.i0))
 
-            new_z = z
+        scanset = new_set
+        if not len(scanset):
+            self.spectra = []
+            return
+
+        ul = self.use_log
+        tr = self.transfer
+        ela = self.ela_remove
+        if not self.normalize and (
+            self.incident_energy is None and any(i[1] is None for i in scanset)
+        ):
+            # if not multi:
+            #     self.spectra = [
+            #         Spectrum(self, s, i, ul=ul, tr=tr, ela=ela)
+            #         for i, s in enumerate(scanset)
+            #     ]
+            # else:
+            self.spectra = []
+            for i, _ in enumerate(scanset[0][0]):
+                s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
+                self.spectra.append(Spectrum(self, s, i, ul=ul, tr=tr, ela=ela))
+
+        elif (self.i0 is None and any(i[2] is None for i in scanset)) or (
+            self.incident_energy is None and any(i[1] is None for i in scanset)
+        ):
+            self.error = ErrorWindow("noInfoRXES")
+            return True
+
         else:
-            x, y, z = [], [], []
-            change_y = True
-            for k, s in enumerate(self.spectra):
-                for i, c in enumerate(s.inc):
-                    if change_y:
-                        y.append(s.em[i])
-                    try:
-                        z[k].insert(i, s.inte[i])
-                    except IndexError:
-                        z.insert(k, [s.inte[i]])
-                x.append(c)
-                change_y = False
+            # if multi:
+            slen = len(scanset[0][0])
+            # else:
+            #     slen = len(scanset)
 
-            new_z = []
-            for i, _ in enumerate(z):
-                for j, _ in enumerate(z[i]):
-                    try:
-                        new_z[j].append(z[i][j])
-                    except IndexError:
-                        new_z.insert(j, [z[i][j]])
+            i0inc = False
+            if self.i0 is not None and self.incident_energy is not None:
+                i0inc = True
+                inc = self.incident_energy
+                i0 = self.i0
+
+                inclen = len(inc)
+                i0len = len(i0)
+
+            if self.normalize:
+                if i0inc:
+                    if slen != i0len or slen != inclen or i0len != inclen:
+                        self.error = ErrorWindow("NotEnoughData")
+                        return True
+                    # if not multi:
+                    #     self.spectra = [
+                    #         Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
+                    #         for i, s in enumerate(scanset)
+                    #     ]
+                    # else:
+                    self.spectra = []
+                    for i, _ in enumerate(scanset[0][0]):
+                        s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
+                        self.spectra.append(
+                            Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
+                        )
+                else:
+                    self.spectra = []
+                    for i, _ in enumerate(scanset[0][0]):
+                        s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
+                        inc = [scanset[j][1][i] for j, _ in enumerate(scanset)]
+                        i0 = [scanset[j][2][i] for j, _ in enumerate(scanset)]
+                        self.spectra.append(
+                            Spectrum(self, s, i, inc, i0, ul=ul, tr=tr, ela=ela)
+                        )
+
+            else:
+                # if not multi:
+                #     self.spectra = [
+                #         Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
+                #         for i, s in enumerate(scanset)
+                #     ]
+                # else:
+                if i0inc:
+                    self.spectra = []
+                    for i, _ in enumerate(scanset[0][0]):
+                        s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
+                        self.spectra.append(
+                            Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
+                        )
+                else:
+                    self.spectra = []
+                    for i, _ in enumerate(scanset[0][0]):
+                        s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
+                        inc = [scanset[j][1][i] for j, _ in enumerate(scanset)]
+                        self.spectra.append(
+                            Spectrum(self, s, i, inc, ul=ul, tr=tr, ela=ela)
+                        )
+
+    # creates the checkbox layout (and recreates it to fix formatting)
+    def addDataCheckbox(self):
+
+        try:
+            self.mlayout.removeWidget(self.checks)
+        except Exception:
+            pass
+
+        self.checks = QtWidgets.QScrollArea()
+        self.checks_widget = QtWidgets.QWidget()
+        self.checks_grid = QtWidgets.QGridLayout(self.checks_widget)
+
+        self.datasets = [
+            Dataset(self, d.name, d.data, d.num, d.energy, d.i0, d.enabled)
+            for d in self.datasets
+        ]
+        for dataset in self.datasets:
+            self.checks_grid.addWidget(dataset.box, dataset.num, 0)
+            self.checks_grid.setRowMinimumHeight(dataset.num, 20)
+
+        self.checks.setWidget(self.checks_widget)
+        self.mlayout.addWidget(self.checks, 4, 0)
+
+    # sets data and graphs data all in one (for simpler calling)
+    def refresh(self):
+        self.setData(self.scanset)
+        self.graph3dSpectra()
+        self.graph2dSpectra()
+
+    # This is the 3d graph
+    def graph3dSpectra(self):
+        self.ax3d.clear()
+        if self.transfer:
+            self.fixax3dtr()
+        else:
+            self.fixax3d()
+
+        self.refresh_button.setDisabled(False)
+
+        if not len(self.spectra):
+            self.sc3d.draw_idle()
+            return
+
+        x, y, z = [], [], []
+        for i, s in enumerate(self.spectra):
+
+            if self.transfer and i < len(self.spectra) - 1:
+                if s.em[-1] > self.spectra[i + 1].em[-1]:
+                    continue
+            x.append(s.inc)
+            y.append(s.em)
+            z.append(s.inte)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        z = np.asarray(z)
+
+        accuracy = 200  # higher numbers result in more data points, but slower interactivity. 50 is default.
+        self.ax3d.plot_surface(
+            x, y, z, cmap="viridis", rcount=accuracy, ccount=accuracy
+        )
+        self.sc3d.draw_idle()
+
+    # This is the contour map
+    def graph2dSpectra(self):
+        # skips drawing 2d if it hasn't changed
+        if not (
+            self.data_changed
+            or self.transfer != self.old_2d["use"]["tr"]
+            or self.normalize != self.old_2d["use"]["norm"]
+            or self.ela_remove != self.old_2d["use"]["ela"]
+            or self.use_log != self.old_2d["use"]["log"]
+            or self.map_type != self.old_2d["map_type"]
+        ):
+            return
+
+        # min and max values used for analysis later
+        # these values are used in RXESWindow.calcEmInc
+
+        if not len(self.spectra):
+            self.ax2d.cla()
+            self.fixax2d()
+            self.sc2d.draw_idle()
+            return
+
+        x, y, z = [], [], []
+        for _, s in enumerate(self.spectra):
+            x.append(s.inc)
+            y.append(s.em)
+            z.append(s.inte)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        z = np.asarray(z)
 
         self.old_2d = {
-            "data": [x, y, new_z],
+            "data": [x, y, z],
             "use": {
                 "tr": self.transfer,
                 "norm": self.normalize,
                 "ela": self.ela_remove,
                 "log": self.use_log,
             },
+            "map_type": {self.map_type},
         }
         self.data_changed = False
 
@@ -734,12 +712,16 @@ class RXESWindow(Window):
             self.fixax2d()
         self.map_type = self.colour_mode.currentData()
         if self.map_type == "contour":
-            self.ax2d.contourf(x, y, new_z, levels=14, extend="both", cmap="viridis")
+            self.ax2d.contourf(x, y, z, levels=10, extend="both", cmap="viridis")
         elif self.map_type == "pcolor":
-            self.ax2d.pcolor(x, y, new_z)
+            self.ax2d.pcolor(x, y, z, cmap="viridis")
 
+        self.save_all_button.setDisabled(False)
+        self.save_disp_button.setDisabled(False)
         self.sc2d.draw_idle()
 
+        self.save_em_button.setDisabled(True)
+        self.save_inc_button.setDisabled(True)
         self.select_em.setText("")
         self.select_inc.setText("")
         self.emsc.plotItem.clear()
@@ -748,60 +730,94 @@ class RXESWindow(Window):
     # Get datapoints for Emission and Incident vs Intensity 2D graphs
     def calcEmInc(self):
         self.error = lambda: ErrorWindow("invalidEmIncRXES")
-
-        try:
-            em = int(self.select_em.text())
-            inc = int(self.select_inc.text())
-        except ValueError:
-            self.error()
+        inc = self.select_inc.text()
+        em = self.select_em.text()
+        if not (inc or em):
             return
 
-        minem, maxem = self.em_limits
-        mininc, maxinc = self.inc_limits
-        if not (minem <= em <= maxem) or not (mininc <= inc <= maxinc):
-            self.error()
-            return
+        if inc:
+            inc = float(inc)
+            mininc, maxinc = self.inc_limits
+            if not (mininc <= inc <= maxinc):
+                self.error()
+                return
+            del mininc, maxinc
 
-        # Emission Calc
-        em_incident = []
-        em_intensity = []
-        for s in self.spectra:
-            for i, e in enumerate(s.em):
-                if em - 0.1 <= e <= em + 0.1:
-                    break
-            em_incident.append(s.inc[0])
-            em_intensity.append(s.inte[i])
-        em_data = (em_incident, em_intensity)
+            # Incident Calc
+            try:
+                inc_spectrum = self.spectra[inc]
+            except Exception:
+                ls = None
+                for s in self.spectra:
+                    if s.inc[0] > inc:
+                        if ls is None:
+                            ls = s
+                        break
+                    ls = s
 
-        # Incident Calc
-        try:
-            inc_spectrum = self.spectra[inc]
-        except Exception:
-            ls = None
+                if min(abs(ls.inc[0] - inc), abs(s.inc[0] - inc)) == abs(
+                    s.inc[0] - inc
+                ):
+                    inc_spectrum = s
+                else:
+                    inc_spectrum = ls
+
+            inc_emission = inc_spectrum.em
+            inc_intensity = inc_spectrum.inte
+            inc_data = (inc_emission, inc_intensity)
+
+        elif not inc:
+            inc_data = None
+
+        if em:
+            em = float(em)
+            minem, maxem = self.em_limits
+            if not (minem <= em <= maxem):
+                self.error()
+                return
+            del minem, maxem
+
+            # Emission Calc
+            em_incident = []
+            em_intensity = []
             for s in self.spectra:
-                if s.inc[0] > inc:
-                    if ls is None:
-                        ls = s
-                    break
-                ls = s
+                for i, e in enumerate(s.em):
+                    if em - 0.1 <= e <= em + 0.1:
+                        break
+                em_incident.append(s.inc[0])
+                em_intensity.append(s.inte[i])
+            em_data = (em_incident, em_intensity)
 
-            if min(abs(ls.inc[0] - inc), abs(s.inc[0] - inc)) == abs(s.inc[0] - inc):
-                inc_spectrum = s
-            else:
-                inc_spectrum = ls
-
-        inc_emission = inc_spectrum.em
-        inc_intensity = inc_spectrum.inte
-        inc_data = (inc_emission, inc_intensity)
+        elif not em:
+            em_data = None
 
         self.graphEmInc(em_data, inc_data)
+        self.save_em_button.setDisabled(False)
+        self.save_inc_button.setDisabled(False)
 
     # Graph Emission and Incident vs Intensity 2D graphs
     def graphEmInc(self, em, inc):
-        self.emsc.plotItem.clear()
-        self.emsc.plotItem.plot(em[0], em[1], pen=pg.mkPen(color="k", width=2))
-        self.incsc.plotItem.clear()
-        self.incsc.plotItem.plot(inc[0], inc[1], pen=pg.mkPen(color="k", width=2))
+        if em is not None:
+            self.emsc.plotItem.clear()
+            self.emsc.plotItem.plot(em[0], em[1], pen=pg.mkPen(color="k", width=2))
+        if inc is not None:
+            self.incsc.plotItem.clear()
+            self.incsc.plotItem.plot(inc[0], inc[1], pen=pg.mkPen(color="k", width=2))
+
+    def saveSpectra(self, spectra=None):
+        pass
+
+    def saveAllSpectra(self):
+        pass
+
+    def saveDispSpectra(self):
+        pass
+
+    def saveEmissionSlice(self):
+        pass
+
+    def saveIncidentSlice(self):
+        pass
 
 
 # creates an RXES window when file is run

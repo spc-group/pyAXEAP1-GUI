@@ -34,7 +34,7 @@ class ErrorWindow(QtWidgets.QDialog):
                 "No spectra are selected. Select spectra to calculate the average."
             )
         elif error == "invalidEmIncRXES":
-            labeltext = "No Emission or no Incident energy selected."
+            labeltext = "Emission or Incident Energy selected are out of range."
         elif error == "NotEnoughData":
             labeltext = "There are either too many or too few lines in the given information file."
         elif error == "notImplemented":

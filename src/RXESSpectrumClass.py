@@ -8,7 +8,16 @@ from PyQt6 import QtWidgets
 class Dataset:
     """RXES Dataset class to hold checkbox for each dataset."""
 
-    def __init__(self, parent, name: str, data: tuple, num: int, enabled: bool = True):
+    def __init__(
+        self,
+        parent,
+        name: str,
+        data: tuple,
+        num: int,
+        energy: list | None = None,
+        i0: list | None = None,
+        enabled: bool = True,
+    ):
         """
         Parameters
         ----------
@@ -28,11 +37,13 @@ class Dataset:
         self.name = name
         self.data = data
         self.num = num
+        self.energy = energy
+        self.i0 = i0
         self.enabled = enabled
         self.disabled = not enabled
 
         self.box = QtWidgets.QCheckBox(name)
-        self.box.setChecked(True)
+        self.box.setChecked(enabled)
         self.box.stateChanged.connect(self.switch)
 
     def switch(self):
@@ -49,8 +60,8 @@ class Spectrum:
         parent,
         spectrum: Spectra | list,
         num: int,
-        inc: float | None = None,
-        i0: float | None = None,
+        inc: list | float | None = None,
+        i0: list | float | None = None,
         ul: bool = False,  # means "use log"
         tr: bool = False,  # means "transfer"
         ela: bool = False,  # means "elastic removal"
@@ -87,15 +98,34 @@ class Spectrum:
         self.parent = parent
         self.spectrum = spectrum
 
-        if multi:
-            intense = average([s.intensities for s in spectrum], axis=0)
-        else:
-            intense = spectrum.intensities
-
         if i0 is not None:
-            self.inte = array(intense) / i0
+            if type(i0) is list:
+                if multi:
+                    self.inte = average(
+                        array([s.intensities / i0[i] for i, s in enumerate(spectrum)]),
+                        axis=0,
+                    )
+                else:
+                    self.inte = array(spectrum.intensities) / i0[0]
+            else:
+                if multi:
+                    self.inte = (
+                        average(
+                            array([s.intensities for _, s in enumerate(spectrum)]),
+                            axis=0,
+                        )
+                        / i0
+                    )
+                else:
+                    self.inte = array(spectrum.intensities) / i0
         else:
-            self.inte = array(intense)
+            if multi:
+                self.inte = average([s.intensities for s in spectrum], axis=0)
+            else:
+                self.inte = array(spectrum.intensities)
+
+        if type(inc) is list:
+            inc = inc[0]
 
         if ul:
             self.inte = log(self.inte)

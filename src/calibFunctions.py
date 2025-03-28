@@ -10,6 +10,7 @@ from pathlib import Path
 from axeap import core
 from axeap.core import conventions as cnv
 from scipy import interpolate
+from sklearn.cluster import KMeans
 import os
 import numpy as np
 import h5py
@@ -275,11 +276,13 @@ def approximateROIs(numcrystals, mincuts, maxcuts, scan, points):
     The combination of these regions gives rectangular regions of interest.
     """
     s = scan
+    if type(s) is np.ndarray:
+        s = core.Scan(s)
     minwidth = s.dims[cnv.X] / 8 / 3
     hrois = core.calcHROIs(
         s.mod(cuts=(mincuts, maxcuts)),
         min_width=minwidth,
-        group_buffer=10,
+        # group_buffer=10,
     )
     hrois = list((h.lo, h.hi) for h in hrois)
 
@@ -338,3 +341,29 @@ def approximateROIs(numcrystals, mincuts, maxcuts, scan, points):
         vrois.append((ymin, ymax))
 
     return hrois, vrois
+
+
+def approxKmeans(points, k: int):
+    vals = []
+    allx = []
+    ally = []
+
+    for i in points:
+        x = i[0]
+        y = i[1]
+        allx += x
+        ally += y
+        vals.append(np.column_stack((x, y)))
+    vals = np.row_stack(vals)
+
+    kmeans = KMeans(k, n_init=10)
+    kmeans.fit(vals)
+
+    rectangles = []
+    for val in range(k):
+        cluster_points = vals[kmeans.labels_ == val]
+        if len(cluster_points) > 0:
+            x_min, y_min = cluster_points.min(axis=0)
+            x_max, y_max = cluster_points.max(axis=0)
+            rectangles.append([x_min, y_min, x_max, y_max])
+    return rectangles

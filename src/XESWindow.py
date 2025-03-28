@@ -92,7 +92,7 @@ class XESWindow(Window):
         self.setMenuBar(menubar)
 
         # File Menu
-        filemenu = QtWidgets.QMenu("File", menubar)
+        filemenu = QtWidgets.QMenu("Save", menubar)
 
         # adding the file menu to the menu bar
         menubar.addAction(filemenu.menuAction())

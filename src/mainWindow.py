@@ -13,7 +13,12 @@ from ApproxWindow import ApproxWindow
 from ErrorWindow import ErrorWindow
 from XESWindow import XESWindow
 from RXESWindow import RXESWindow
-from calibFunctions import approximateROIs, getCoordsFromScans, calcEnergyMap
+from calibFunctions import (
+    approximateROIs,
+    approxKmeans,
+    getCoordsFromScans,
+    calcEnergyMap,
+)
 from CalibFileClass import CalibFile
 from SettingsWindow import SettingsWindow
 from FileLoad import LoadTiffCalib, LoadInfoData, LoadH5Data
@@ -71,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.confirm_on_close = False
         else:
             self.confirm_on_close = True
+        self.roi_type = settings["roi_type"]
 
         self.setWindowTitle("pyAXEAP1")
         self.setFixedSize(960, 574)
@@ -252,6 +258,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.confirm_on_close = False
         else:
             self.confirm_on_close = True
+        self.roi_type = settings["roi_type"]
 
     # opens calibration file dialog window, then loads data
     def openPath(self):
@@ -441,48 +448,82 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.ApproxWindow.value is None:
             return
 
-        self.emap_calc_button.setDisabled(False)
-
         # approximates ROIs
-        numcrystals = self.ApproxWindow.value
-        lencalibs = len(self.calib_energies)
-        hrois, vrois = approximateROIs(
-            numcrystals,
-            self.mincuts.value(),
-            self.maxcuts.value(),
-            self.calibscans.items[int(lencalibs / 2)],
-            self.points,
-        )
+        if self.roi_type == "standard" or self.roi_type == "kmeans":
+            self.drawCalibPoints()
+            self.rects = []
+            numcrystals = self.ApproxWindow.value
+            self.emap_calc_button.setDisabled(False)
+        else:
+            raise ValueError(f"ROI type {self.roi_type} is not valid.")
 
-        # points are redrawn to clear old ROIs, etc. Takes virtually no time.
-        self.drawCalibPoints()
-
-        # creates rectangles and stores them
-        self.rects = []
-        for i, h in enumerate(hrois):
-            v = vrois[i]
-            rect = pg.RectROI(
-                pos=(h[0], v[0]),
-                size=(h[1] - h[0], v[1] - v[0]),
-                pen=(255, 0, 0, 255),
-                hoverPen=(255, 20, 20, 255),
-                handlePen=(255, 0, 0, 255),
-                handleHoverPen=(255, 0, 0, 255),
-                resizable=True,
-                removable=True,
+        # Standard (WARNING: doesn't always work!)
+        if self.roi_type == "standard":
+            lencalibs = len(self.calib_energies)
+            if type(self.calibscans) is list:
+                data_input = self.calibscans[int(lencalibs / 2)]
+            else:
+                data_input = self.calibscans.items[int(lencalibs / 2)]
+            hrois, vrois = approximateROIs(
+                numcrystals,
+                self.mincuts.value(),
+                self.maxcuts.value(),
+                data_input,
+                self.points,
             )
-            # adds corner and edge moveability
-            rect.sigRemoveRequested.connect(self.removeROI)
-            rect.addScaleHandle(pos=(0, 0), center=(1, 1))
-            rect.addScaleHandle(pos=(0, 1), center=(1, 0))
-            rect.addScaleHandle(pos=(1, 0), center=(0, 1))
-            rect.addScaleHandle(pos=(0, 0.5), center=(1, 0.5))
-            rect.addScaleHandle(pos=(1, 0.5), center=(0, 0.5))
-            rect.addScaleHandle(pos=(0.5, 0), center=(0.5, 1))
-            rect.addScaleHandle(pos=(0.5, 1), center=(0.5, 0))
+            for i, h in enumerate(hrois):
+                v = vrois[i]
+                rect = pg.RectROI(
+                    pos=(h[0], v[0]),
+                    size=(h[1] - h[0], v[1] - v[0]),
+                    pen=(255, 0, 0, 255),
+                    hoverPen=(255, 20, 20, 255),
+                    handlePen=(255, 0, 0, 255),
+                    handleHoverPen=(255, 0, 0, 255),
+                    resizable=True,
+                    removable=True,
+                )
 
-            self.sc.addItem(rect)
-            self.rects.append(rect)
+                # adds corner and edge moveability
+                rect.sigRemoveRequested.connect(self.removeROI)
+                rect.addScaleHandle(pos=(0, 0), center=(1, 1))
+                rect.addScaleHandle(pos=(0, 1), center=(1, 0))
+                rect.addScaleHandle(pos=(1, 0), center=(0, 1))
+                rect.addScaleHandle(pos=(0, 0.5), center=(1, 0.5))
+                rect.addScaleHandle(pos=(1, 0.5), center=(0, 0.5))
+                rect.addScaleHandle(pos=(0.5, 0), center=(0.5, 1))
+                rect.addScaleHandle(pos=(0.5, 1), center=(0.5, 0))
+
+                self.sc.addItem(rect)
+                self.rects.append(rect)
+
+        # Modified KMeans
+        elif self.roi_type == "kmeans":
+            rects = approxKmeans(self.points, numcrystals)
+            for i in rects:
+                x1, y1, x2, y2 = i
+                rect = pg.RectROI(
+                    pos=(x1, y1),
+                    size=(x2 - x1, y2 - y1),
+                    pen=(255, 0, 0, 255),
+                    hoverPen=(255, 20, 20, 255),
+                    handlePen=(255, 0, 0, 255),
+                    handleHoverPen=(255, 0, 0, 255),
+                    resizable=True,
+                    removable=True,
+                )
+                # adds corner and edge moveability
+                rect.sigRemoveRequested.connect(self.removeROI)
+                rect.addScaleHandle(pos=(0, 0), center=(1, 1))
+                rect.addScaleHandle(pos=(0, 1), center=(1, 0))
+                rect.addScaleHandle(pos=(1, 0), center=(0, 1))
+                rect.addScaleHandle(pos=(0, 0.5), center=(1, 0.5))
+                rect.addScaleHandle(pos=(1, 0.5), center=(0, 0.5))
+                rect.addScaleHandle(pos=(0.5, 0), center=(0.5, 1))
+                rect.addScaleHandle(pos=(0.5, 1), center=(0.5, 0))
+
+                self.sc.addItem(rect)
+                self.rects.append(rect)
 
     # Removes ROI
     def removeROI(self, event):

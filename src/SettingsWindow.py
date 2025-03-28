@@ -57,6 +57,17 @@ class SettingsWindow(QtWidgets.QDialog):
         elif cmap == "contour":
             self.cmap_box.setCurrentIndex(1)
 
+        # ROI box
+        roitype = self.settings["roi_type"]
+        roi_label = QtWidgets.QLabel("Method to approximate ROIs:")
+        self.roitype_box = QtWidgets.QComboBox()
+        self.roitype_box.addItem("Standard", "standard")
+        self.roitype_box.addItem("KMeans", "kmeans")
+        if roitype == "standard":
+            self.roitype_box.setCurrentIndex(0)
+        elif roitype == "kmeans":
+            self.roitype_box.setCurrentIndex(1)
+
         # confirm on close box
         confirm = self.settings["confirm_on_close"]
         if confirm == "False" or not confirm:
@@ -84,8 +95,10 @@ class SettingsWindow(QtWidgets.QDialog):
         layout.addWidget(self.datatype_box, 2, 1, AlignFlag.AlignRight)
         layout.addWidget(cmap_label, 3, 0, AlignFlag.AlignLeft)
         layout.addWidget(self.cmap_box, 3, 1, AlignFlag.AlignRight)
-        layout.addWidget(self.confirm_box, 4, 0, AlignFlag.AlignLeft)
-        layout.addWidget(buttons, 5, 0, 1, 2, AlignFlag.AlignHCenter)
+        layout.addWidget(roi_label, 4, 0, AlignFlag.AlignLeft)
+        layout.addWidget(self.roitype_box, 4, 1, AlignFlag.AlignRight)
+        layout.addWidget(self.confirm_box, 5, 0, AlignFlag.AlignLeft)
+        layout.addWidget(buttons, 6, 0, 1, 2, AlignFlag.AlignHCenter)
 
         self.setLayout(layout)
         self.show()
@@ -101,6 +114,8 @@ class SettingsWindow(QtWidgets.QDialog):
         datatype = settings["data_load_type"]
         confirm = settings["confirm_on_close"]
         cmap = settings["cmap"]
+        roitype = settings["roi_type"]
+
         text = (
             "#default is 3"
             + f"\ndefault_min_cuts = {str(mincuts)}"
@@ -112,6 +127,8 @@ class SettingsWindow(QtWidgets.QDialog):
             + f"\nconfirm_on_close = {str(confirm)}"
             + "\n#default is pcolor"
             + f"\ncmap = {str(cmap)}"
+            + f"\n#default is standard"
+            + f"\nroi_type = {str(roitype)}"
         )
         with open("settings.ini", "w") as f:
             f.seek(0)
@@ -125,6 +142,7 @@ class SettingsWindow(QtWidgets.QDialog):
         datatype = self.datatype_box.currentData()
         cmap = self.cmap_box.currentData()
         confirm = self.confirm_box.isChecked()
+        roitype = self.roitype_box.currentData()
 
         settings = {
             "default_min_cuts": mincuts,
@@ -132,6 +150,7 @@ class SettingsWindow(QtWidgets.QDialog):
             "data_load_type": datatype,
             "confirm_on_close": confirm,
             "cmap": cmap,
+            "roi_type": roitype,
         }
         return settings
 
@@ -142,6 +161,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.datatype_box.setCurrentIndex(0)
         self.cmap_box.setCurrentIndex(0)
         self.confirm_box.setChecked(False)
+        self.roitype_box.setCurrentIndex(0)
 
     def getFileSettings(self=None):
         try:
@@ -164,7 +184,9 @@ class SettingsWindow(QtWidgets.QDialog):
             "data_load_type": "tif",
             "confirm_on_close": "True",
             "cmap": "pcolor",
+            "roi_type": "standard",
         }
+
         for setting in defaults:
             if setting not in settings:
                 settings[setting] = defaults[setting]
@@ -177,6 +199,7 @@ class SettingsWindow(QtWidgets.QDialog):
             "data_load_type": "tif",
             "confirm_on_close": "True",
             "cmap": "pcolor",
+            "roi_type": "standard",
         }
         return settings
 
