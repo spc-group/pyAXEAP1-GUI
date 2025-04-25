@@ -4,6 +4,10 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
 import sys
+from openpyxl import Workbook as ExWorkbook
+from openpyxl.utils import get_column_letter as getColumnLetter
+import numpy as np
+from axeap import core
 
 from ErrorWindow import ErrorWindow
 from LoadingBarWindow import LoadingBarWindow
@@ -14,9 +18,6 @@ from ColourSelectWindow import ColourSelect
 from FileLoad import LoadTifSpectraData, LoadH5Data
 from ExitDialogWindow import exitDialog
 from BaseWindow import Window
-
-from openpyxl import Workbook as ExWorkbook
-from openpyxl.utils import get_column_letter as getColumnLetter
 
 AlignFlag = QtCore.Qt.AlignmentFlag
 
@@ -231,21 +232,39 @@ class XESWindow(Window):
 
         emap = self.emap
         # gets all XES spectra.
-        LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames))
         scanset = []
         data = calcDataForSpectra(emap)
         hnames = {}
-        for i in self.filenames:
-            if LoadWindow.wasCanceled():
-                break
-            spectra = calcSpectra(i, emap, data, dtype)[0]
-            if type(spectra) is list:
-                hnames[i] = len(spectra)
-                scanset += spectra
-            else:
-                scanset.append(spectra)
-            LoadWindow.add()
-            QtWidgets.QApplication.processEvents()
+        if dtype == "h5py":
+            for l, j in enumerate(self.filenames, 1):
+                images, _, _ = LoadH5Data.loadData(j)
+                temp_scans = [core.Scan(np.swapaxes(img, 0, 1)) for img in images]
+                hnames[j] = len(temp_scans)
+
+                LoadWindow = LoadingBarWindow(
+                    f"Loading XES data... ({l}/{len(self.filenames)})", len(temp_scans)
+                )
+                for i in temp_scans:
+                    if LoadWindow.wasCanceled():
+                        break
+                    spectra = calcSpectra(i, emap, data, dtype)[0]
+                    scanset.append(spectra)
+                    LoadWindow.add()
+                    QtWidgets.QApplication.processEvents()
+
+        else:
+            LoadWindow = LoadingBarWindow("Loading XES data...", len(self.filenames))
+            for i in self.filenames:
+                if LoadWindow.wasCanceled():
+                    break
+                spectra = calcSpectra(i, emap, data, dtype)[0]
+                if type(spectra) is list:
+                    hnames[i] = len(spectra)
+                    scanset += spectra
+                else:
+                    scanset.append(spectra)
+                LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
         LoadWindow.deleteLater()
 
         if LoadWindow.wasCanceled():
@@ -439,7 +458,7 @@ class XESWindow(Window):
 
         dialog = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Save All Spectra",
+            "Save Spectra",
             filter=("Excel Spreadsheet (*.xlsx)\nSimple Text Layout (*.csv)"),
         )
         if dialog[1] == "Excel Spreadsheet (*.xlsx)":

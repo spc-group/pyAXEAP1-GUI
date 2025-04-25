@@ -6,6 +6,7 @@ class LoadingBarWindow(QProgressDialog):
 
     def __init__(self, message: str, num: int, *args, **kwargs):
         super(LoadingBarWindow, self).__init__(*args, **kwargs)
+        self.setWindowTitle("Loading")
 
         self.setLabelText(message)
         self.setAutoClose(True)

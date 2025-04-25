@@ -4,6 +4,7 @@ from PyQt6 import QtWidgets
 class DialogWindow(QtWidgets.QDialog):
     def __init__(self, *args, **kwargs):
         super(DialogWindow, self).__init__(*args, **kwargs)
+        self.setWindowTitle("Dialog")
 
         buttons = (
             QtWidgets.QDialogButtonBox.StandardButton.Ok

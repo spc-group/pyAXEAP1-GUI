@@ -11,7 +11,9 @@ from matplotlib.backends.backend_qtagg import (
 )
 import matplotlib
 import numpy as np
-from scipy.interpolate import interp1d
+from openpyxl import Workbook as ExWorkbook
+from openpyxl.utils import get_column_letter as getColumnLetter
+from axeap import core
 
 matplotlib.use("QtAgg")
 
@@ -75,14 +77,13 @@ class RXESWindow(Window):
 
         # Default Values
         self.setWindowTitle("RXES (RIXS)")
-        self.setFixedSize(780, 720)
+        self.setFixedSize(800, 720)
         self.parent = parent
         if self.parent is None:
             self.no_close_dialog = True
         else:
             self.no_close_dialog = False
         self.emaps = []
-        self.map_type = 0
         self.info_file = None
         self.i0 = None
         self.incident_energy = None
@@ -90,7 +91,6 @@ class RXESWindow(Window):
         self.use_log = False
         self.transfer = False
         self.ela_remove = False
-        self.scanset = []
         self.foldernames = []
         self.datasets = []
         self.old_2d = {
@@ -101,6 +101,8 @@ class RXESWindow(Window):
                 "ela": self.ela_remove,
                 "log": self.use_log,
             },
+            "col_mode": None,
+            "colmap_type": None,
         }
         self.data_changed = False
 
@@ -146,7 +148,7 @@ class RXESWindow(Window):
         filemenu.setFixedSize(240, 136)
 
         # Save all spectra "button"
-        self.save_all_button = QtGui.QAction("Save All Spectra As...")
+        self.save_all_button = QtGui.QAction("Save Selected Datasets As...")
         self.save_all_button.triggered.connect(self.saveAllSpectra)
         self.save_all_button.setDisabled(True)
         self.save_all_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
@@ -154,16 +156,32 @@ class RXESWindow(Window):
         filemenu.addSeparator()
 
         # Save selected spectra "button"
-        self.save_disp_button = QtGui.QAction("Save Selected Spectra As...")
+        self.save_disp_button = QtGui.QAction("Save Averaged Spectra As...")
         self.save_disp_button.triggered.connect(self.saveDispSpectra)
         self.save_disp_button.setDisabled(True)
         self.save_disp_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
         filemenu.addAction(self.save_disp_button)
         filemenu.addSeparator()
 
+        # Save surface plot image
+        self.save_surf_button = QtGui.QAction("Save Surface Plot Figure As...")
+        self.save_surf_button.triggered.connect(self.saveSurfFigure)
+        self.save_surf_button.setDisabled(True)
+        self.save_surf_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_surf_button)
+        filemenu.addSeparator()
+
+        # Save contour plot image
+        self.save_cont_button = QtGui.QAction("Save Contour Map Figure As...")
+        self.save_cont_button.triggered.connect(self.saveContFigure)
+        self.save_cont_button.setDisabled(True)
+        self.save_cont_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
+        filemenu.addAction(self.save_cont_button)
+        filemenu.addSeparator()
+
         # Save emission slice "button"
         self.save_em_button = QtGui.QAction("Save Emission Slice As...")
-        self.save_disp_button.triggered.connect(self.saveEmissionSlice)
+        self.save_em_button.triggered.connect(self.saveEmissionSlice)
         self.save_em_button.setDisabled(True)
         self.save_em_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
         filemenu.addAction(self.save_em_button)
@@ -171,7 +189,7 @@ class RXESWindow(Window):
 
         # Save incident slice "button"
         self.save_inc_button = QtGui.QAction("Save Incident Slice As...")
-        self.save_disp_button.triggered.connect(self.saveIncidentSlice)
+        self.save_inc_button.triggered.connect(self.saveIncidentSlice)
         self.save_inc_button.setDisabled(True)
         self.save_inc_button.setIcon(QtGui.QIcon("icons/save-icon.png"))
         filemenu.addAction(self.save_inc_button)
@@ -194,13 +212,13 @@ class RXESWindow(Window):
         # RXES data button
         load_rxes_button = QtWidgets.QPushButton("Load RXES Data...")
         load_rxes_button.clicked.connect(self.loadRXES)
-        load_rxes_button.setFixedSize(140, 30)
+        load_rxes_button.setFixedSize(160, 30)
 
         # Refresh button
         self.refresh_button = QtWidgets.QPushButton("Refresh")
         self.refresh_button.setDisabled(True)
         self.refresh_button.clicked.connect(self.refresh)
-        self.refresh_button.setFixedSize(100, 30)
+        self.refresh_button.setFixedSize(160, 30)
 
         # Energy map selection box
         self.emap_combo = QtWidgets.QComboBox()
@@ -233,14 +251,14 @@ class RXESWindow(Window):
         except Exception:
             cmap = "pcolor"
         self.colour_mode = QtWidgets.QComboBox()
-        self.colour_mode.setFixedSize(72, 30)
+        self.colour_mode.setFixedSize(74, 30)
         self.colour_mode.addItem("PColor", "pcolor")
         self.colour_mode.addItem("Contour", "contour")
         if cmap == "pcolor":
             self.colour_mode.setCurrentIndex(0)
         else:
             self.colour_mode.setCurrentIndex(1)
-        colour_mode_label = QtWidgets.QLabel("2D Mode")
+        colour_mode_label = QtWidgets.QLabel("2D Mode:")
 
         # use log for intensity checkbox
         log_check = QtWidgets.QCheckBox("Log Intensity")
@@ -257,6 +275,24 @@ class RXESWindow(Window):
             "Elastic Removal. Removes peaks where Incident equals Emission."
         )
 
+        # number of points to include (squared)
+        num_points_label = QtWidgets.QLabel("Rows/Cols:")
+        self.num_points = QtWidgets.QLineEdit()
+        self.num_points.setValidator(QtGui.QIntValidator(1, 999))
+        self.num_points.setText("50")
+        self.num_points.setFixedWidth(64)
+
+        # colour map type
+        colmap_label = QtWidgets.QLabel("Map:")
+        self.colmap_type = QtWidgets.QComboBox()
+        self.colmap_type.setFixedSize(74, 30)
+        self.colmap_type.addItem("Viridis", "viridis")
+        self.colmap_type.addItem("Plasma", "plasma")
+        self.colmap_type.addItem("Inferno", "inferno")
+        self.colmap_type.addItem("Magma", "magma")
+        self.colmap_type.addItem("Cividis", "cividis")
+        self.colmap_type.addItem("Gray", "gray")
+
         # add everything to norm_area
         norm_grid.addWidget(info_load_button, 0, 0, 1, 2)
         norm_grid.addWidget(colour_mode_label, 1, 0)
@@ -265,6 +301,10 @@ class RXESWindow(Window):
         norm_grid.addWidget(log_check, 3, 0, 1, 2)
         norm_grid.addWidget(ela_check, 4, 0, 1, 2)
         norm_grid.addWidget(transfer_check, 5, 0, 1, 2)
+        norm_grid.addWidget(num_points_label, 6, 0)
+        norm_grid.addWidget(self.num_points, 6, 1)
+        norm_grid.addWidget(colmap_label, 7, 0)
+        norm_grid.addWidget(self.colmap_type, 7, 1)
         norm_area.setWidget(norm_widget)
 
         # Emission and Incident selection
@@ -281,10 +321,10 @@ class RXESWindow(Window):
         # Connects everything to the RXES window
         widget = QtWidgets.QWidget()
         self.mlayout = QtWidgets.QGridLayout(widget)
-        self.mlayout.addWidget(load_rxes_button, 1, 0, AlignFlag.AlignLeft)
+        self.mlayout.addWidget(self.refresh_button, 0, 0, AlignFlag.AlignHCenter)
+        self.mlayout.addWidget(load_rxes_button, 1, 0, AlignFlag.AlignHCenter)
         self.mlayout.addWidget(self.emap_combo, 0, 5, AlignFlag.AlignRight)
         # self.mlayout.addWidget(toolbar, 1, 1, AlignFlag.AlignLeft)
-        self.mlayout.addWidget(self.refresh_button, 1, 1, 1, 2, AlignFlag.AlignTop)
         self.mlayout.addWidget(emap_load_button, 1, 5, AlignFlag.AlignRight)
         self.mlayout.addWidget(norm_area, 2, 0)
         self.mlayout.addWidget(self.sc3d, 2, 1, 1, 4, AlignFlag.AlignLeft)
@@ -296,7 +336,7 @@ class RXESWindow(Window):
         self.mlayout.addWidget(self.em_inc_button, 3, 5)
         self.mlayout.addWidget(self.emsc, 4, 1, 1, 4, AlignFlag.AlignLeft)
         self.mlayout.addWidget(self.incsc, 4, 2, 1, 4, AlignFlag.AlignRight)
-        self.mlayout.setColumnMinimumWidth(0, 150)
+        self.mlayout.setColumnMinimumWidth(0, 170)
         self.mlayout.setColumnMinimumWidth(2, 180)
         self.mlayout.setColumnMinimumWidth(4, 180)
 
@@ -402,41 +442,51 @@ class RXESWindow(Window):
         if not self.filenames:
             return
 
-        LoadWindow = LoadingBarWindow(
-            "Loading RXES (RIXS) data...", len(self.filenames)
-        )
         scanset = []
         energies = []
         i0s = []
-        for i in self.filenames:
-            if LoadWindow.wasCanceled():
-                break
-            spectra, energy, i0 = calcSpectra(i, emap, data, dtype)
-            if energy and len(energy) == len(spectra):
-                # self.incident_energy = energy
-                # self.i0 = i0
+        if dtype == "h5py":
+            for l, j in enumerate(self.filenames, 1):
+                images, energy, i0 = LoadH5Data.loadData(j)
+                temp_scans = [core.Scan(np.swapaxes(img, 0, 1)) for img in images]
                 energies.append(energy)
                 i0s.append(i0)
-            if type(spectra) is list:
-                scanset += spectra
-            else:
-                scanset.append(spectra)
-            LoadWindow.add()
-            QtWidgets.QApplication.processEvents()
+                LoadWindow = LoadingBarWindow(
+                    f"Loading RXES (RIXS) data... ({l}/{len(self.filenames)})",
+                    len(temp_scans),
+                )
+                for i in temp_scans:
+                    if LoadWindow.wasCanceled():
+                        break
+                    spectra, _, _ = calcSpectra(i, emap, data, dtype)
+                    scanset.append(spectra)
+                    LoadWindow.add()
+                    QtWidgets.QApplication.processEvents()
+
+        else:
+            LoadWindow = LoadingBarWindow(
+                "Loading RXES (RIXS) data...", len(self.filenames)
+            )
+            for i in self.filenames:
+                if LoadWindow.wasCanceled():
+                    break
+                spectra, energy, i0 = calcSpectra(i, emap, data, dtype)
+                if energy and len(energy) == len(spectra):
+                    # self.incident_energy = energy
+                    # self.i0 = i0
+                    energies.append(energy)
+                    i0s.append(i0)
+                if type(spectra) is list:
+                    scanset += spectra
+                else:
+                    scanset.append(spectra)
+                LoadWindow.add()
+                QtWidgets.QApplication.processEvents()
+
         LoadWindow.deleteLater()
 
         if LoadWindow.wasCanceled():
             return
-
-        self.scanset.append(scanset)
-        # if multi:
-        #     if self.scanset != []:
-        #         if type(self.scanset[0]) is not list:
-        #             self.scanset = []
-        #     self.scanset.append(scanset)
-
-        # else:
-        #     self.scanset = scanset
 
         dname = self.filenames[0]
         if dtype == "tif":
@@ -458,7 +508,7 @@ class RXESWindow(Window):
         self.datasets.append(dataset)
         self.addDataCheckbox()
 
-        failed = self.setData(self.scanset)  # returns True if failed, otherwise None
+        failed = self.setData()  # returns True if failed, otherwise None
         if failed:
             self.foldernames.remove(dname)
             self.datasets.remove(dataset)
@@ -500,16 +550,18 @@ class RXESWindow(Window):
         self.em_inc_button.setDisabled(False)
 
     # sets spectra data, including creating Spectrum classes
-    def setData(self, scanset):  #'scanset' is ignored, but it's easier to keep it here
+    def setData(self, scanset=None, do_return=False):
 
-        new_set = []
-        for dataset in self.datasets:
-            if dataset.enabled:
-                new_set.append((dataset.data, dataset.energy, dataset.i0))
+        if scanset is None:
+            new_set = []
+            for dataset in self.datasets:
+                if dataset.enabled:
+                    new_set.append((dataset.data, dataset.energy, dataset.i0))
 
-        scanset = new_set
+            scanset = new_set
         if not len(scanset):
-            self.spectra = []
+            if not do_return:
+                self.spectra = []
             return
 
         ul = self.use_log
@@ -524,10 +576,10 @@ class RXESWindow(Window):
             #         for i, s in enumerate(scanset)
             #     ]
             # else:
-            self.spectra = []
+            spectra = []
             for i, _ in enumerate(scanset[0][0]):
                 s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
-                self.spectra.append(Spectrum(self, s, i, ul=ul, tr=tr, ela=ela))
+                spectra.append(Spectrum(self, s, i, ul=ul, tr=tr, ela=ela))
 
         elif (self.i0 is None and any(i[2] is None for i in scanset)) or (
             self.incident_energy is None and any(i[1] is None for i in scanset)
@@ -555,25 +607,19 @@ class RXESWindow(Window):
                     if slen != i0len or slen != inclen or i0len != inclen:
                         self.error = ErrorWindow("NotEnoughData")
                         return True
-                    # if not multi:
-                    #     self.spectra = [
-                    #         Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
-                    #         for i, s in enumerate(scanset)
-                    #     ]
-                    # else:
-                    self.spectra = []
+                    spectra = []
                     for i, _ in enumerate(scanset[0][0]):
                         s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
-                        self.spectra.append(
+                        spectra.append(
                             Spectrum(self, s, i, inc[i], i0[i], ul=ul, tr=tr, ela=ela)
                         )
                 else:
-                    self.spectra = []
+                    spectra = []
                     for i, _ in enumerate(scanset[0][0]):
                         s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
                         inc = [scanset[j][1][i] for j, _ in enumerate(scanset)]
                         i0 = [scanset[j][2][i] for j, _ in enumerate(scanset)]
-                        self.spectra.append(
+                        spectra.append(
                             Spectrum(self, s, i, inc, i0, ul=ul, tr=tr, ela=ela)
                         )
 
@@ -585,20 +631,23 @@ class RXESWindow(Window):
                 #     ]
                 # else:
                 if i0inc:
-                    self.spectra = []
+                    spectra = []
                     for i, _ in enumerate(scanset[0][0]):
                         s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
-                        self.spectra.append(
+                        spectra.append(
                             Spectrum(self, s, i, inc[i], ul=ul, tr=tr, ela=ela)
                         )
                 else:
-                    self.spectra = []
+                    spectra = []
                     for i, _ in enumerate(scanset[0][0]):
                         s = [scanset[j][0][i] for j, _ in enumerate(scanset)]
                         inc = [scanset[j][1][i] for j, _ in enumerate(scanset)]
-                        self.spectra.append(
-                            Spectrum(self, s, i, inc, ul=ul, tr=tr, ela=ela)
-                        )
+                        spectra.append(Spectrum(self, s, i, inc, ul=ul, tr=tr, ela=ela))
+
+        if do_return:
+            return spectra
+        else:
+            self.spectra = spectra
 
     # creates the checkbox layout (and recreates it to fix formatting)
     def addDataCheckbox(self):
@@ -625,7 +674,7 @@ class RXESWindow(Window):
 
     # sets data and graphs data all in one (for simpler calling)
     def refresh(self):
-        self.setData(self.scanset)
+        self.setData()
         self.graph3dSpectra()
         self.graph2dSpectra()
 
@@ -656,9 +705,15 @@ class RXESWindow(Window):
         y = np.asarray(y)
         z = np.asarray(z)
 
-        accuracy = 200  # higher numbers result in more data points, but slower interactivity. 50 is default.
+        count = int(self.num_points.text())
         self.ax3d.plot_surface(
-            x, y, z, cmap="viridis", rcount=accuracy, ccount=accuracy
+            x,
+            y,
+            z,
+            cmap=self.colmap_type.currentData(),
+            rcount=count,
+            ccount=count,
+            antialiased=False,
         )
         self.sc3d.draw_idle()
 
@@ -671,7 +726,8 @@ class RXESWindow(Window):
             or self.normalize != self.old_2d["use"]["norm"]
             or self.ela_remove != self.old_2d["use"]["ela"]
             or self.use_log != self.old_2d["use"]["log"]
-            or self.map_type != self.old_2d["map_type"]
+            or self.colour_mode.currentData() != self.old_2d["col_mode"]
+            or self.colmap_type.currentData() != self.old_2d["colmap_type"]
         ):
             return
 
@@ -693,6 +749,20 @@ class RXESWindow(Window):
         y = np.asarray(y)
         z = np.asarray(z)
 
+        self.data_changed = False
+
+        self.ax2d.cla()
+        if self.transfer:
+            self.fixax2dtr()
+        else:
+            self.fixax2d()
+        col_mode = self.colour_mode.currentData()
+        colmap = self.colmap_type.currentData()
+        if col_mode == "contour":
+            self.ax2d.contourf(x, y, z, levels=10, extend="both", cmap=colmap)
+        elif col_mode == "pcolor":
+            self.ax2d.pcolor(x, y, z, cmap=colmap)
+
         self.old_2d = {
             "data": [x, y, z],
             "use": {
@@ -701,23 +771,14 @@ class RXESWindow(Window):
                 "ela": self.ela_remove,
                 "log": self.use_log,
             },
-            "map_type": {self.map_type},
+            "col_mode": col_mode,
+            "colmap_type": colmap,
         }
-        self.data_changed = False
-
-        self.ax2d.cla()
-        if self.transfer:
-            self.fixax2dtr()
-        else:
-            self.fixax2d()
-        self.map_type = self.colour_mode.currentData()
-        if self.map_type == "contour":
-            self.ax2d.contourf(x, y, z, levels=10, extend="both", cmap="viridis")
-        elif self.map_type == "pcolor":
-            self.ax2d.pcolor(x, y, z, cmap="viridis")
 
         self.save_all_button.setDisabled(False)
         self.save_disp_button.setDisabled(False)
+        self.save_surf_button.setDisabled(False)
+        self.save_cont_button.setDisabled(False)
         self.sc2d.draw_idle()
 
         self.save_em_button.setDisabled(True)
@@ -805,13 +866,122 @@ class RXESWindow(Window):
             self.incsc.plotItem.plot(inc[0], inc[1], pen=pg.mkPen(color="k", width=2))
 
     def saveSpectra(self, spectra=None):
-        pass
+        if spectra is None:
+            spectra = self.spectra
+
+        dialog = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Spectra",
+            filter=("Excel Spreadsheet (*.xlsx)\nSimple Text Layout (*.csv)"),
+        )
+
+        if type(spectra[0]) is Spectrum:
+            if dialog[1] == "Excel Spreadsheet (*.xlsx)":
+                wb = ExWorkbook()
+                ws = wb.active
+
+                lines = [[] for _, _ in enumerate(spectra[0].inc)]
+                lines.append([])
+                lines.append([])
+                lines.append([])
+                for spect in spectra:
+                    lines[0].append(f"Spectrum {spect.num}")
+                    lines[0].append("")
+                    lines[0].append("")
+                    lines[0].append("")
+                    lines[1].append("Incident Energy (eV)")
+                    lines[1].append("Emission Energy (eV)")
+                    lines[1].append("Intensity")
+                    lines[1].append("")
+                    texts = [
+                        [str(spect.inc[j]), str(spect.em[j]), str(spect.inte[j]), ""]
+                        for j, _ in enumerate(spect.inc)
+                    ]
+                    for k, item in enumerate(texts):
+                        for l in range(4):
+                            lines[k + 2].append(item[l])
+                for i, line in enumerate(lines, 1):
+                    for j, item in enumerate(line, 1):
+                        try:
+                            n = float(item)
+                        except Exception:
+                            n = item
+                        ws.cell(i, j + 1).value = n
+                for i in range(int(len(lines[1]) / 4)):
+                    ws.merge_cells(
+                        start_row=1,
+                        end_row=1,
+                        start_column=i * 4 + 2,
+                        end_column=i * 4 + 4,
+                    )
+                    ws.column_dimensions[getColumnLetter(i * 4 + 2)].width = 18
+                    ws.column_dimensions[getColumnLetter(i * 4 + 3)].width = 18
+                    ws.column_dimensions[getColumnLetter(i * 4 + 4)].width = 8
+
+                ws.cell(1, 1).value = f"Normalized: {self.normalize}"
+                ws.cell(2, 1).value = f"Logged Intensity: {self.use_log}"
+                ws.cell(3, 1).value = f"Elastic Removal: {self.ela_remove}"
+                ws.cell(4, 1).value = f"Transfer Energy: {self.transfer}"
+                ws.column_dimensions[getColumnLetter(1)].width = 24
+
+                wb.save(dialog[0])
+                wb.close()
+
+            elif dialog[1] == "Simple Text Layout (*.csv)":
+                direct = open(dialog[0], "+w")
+                direct.seek(0)
+                direct.truncate()
+                lines = ["" for _, _ in enumerate(spectra[0].inc)]
+                lines.append("")
+                lines.append("")
+                lines[0] += f"Normalized: {self.normalize},"
+                lines[1] += f"Logged Intensity: {self.use_log},"
+                lines[2] += f"Elastic Removal: {self.ela_remove},"
+                lines[3] += f"Transfer Energy: {self.transfer},"
+                for l, _ in enumerate(lines[4:], 4):
+                    lines[l] += ","
+                for spect in spectra:
+                    lines[0] += f"Spectrum {spect.num},,,,"
+                    lines[1] += "Incident Energy (eV),Emission Energy (eV), Intensity,,"
+                    texts = [
+                        f"{spect.inc[j]},{spect.em[j]},{spect.inte[j]},,"
+                        for j, _ in enumerate(spect.inc)
+                    ]
+                    for k, string in enumerate(texts):
+                        lines[k + 2] += string
+                text = ""
+                for line in lines:
+                    text += line + "\n"
+                direct.write(text)
+                direct.close()
+        else:
+            pass
 
     def saveAllSpectra(self):
-        pass
+        data = [(d.data, d.energy, d.i0) for d in self.datasets if d.enabled]
+        spectra = []
+        for d in data:
+            spectra.append(self.setData([d], True))
+        self.saveSpectra(spectra)
 
     def saveDispSpectra(self):
-        pass
+        self.saveSpectra()
+
+    def saveSurfFigure(self):
+        dialog = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Surface Figure",
+            filter=("Image (*.png)\nPDF (Vector) (*.pdf)"),
+        )
+        self.ax3d.get_figure().savefig(dialog[0])
+
+    def saveContFigure(self):
+        dialog = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Contour Figure",
+            filter=("Image (*.png)\nPDF (Vector) (*.pdf)"),
+        )
+        self.ax2d.get_figure().savefig(dialog[0])
 
     def saveEmissionSlice(self):
         pass

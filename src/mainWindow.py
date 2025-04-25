@@ -459,11 +459,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Standard (WARNING: doesn't always work!)
         if self.roi_type == "standard":
-            lencalibs = len(self.calib_energies)
-            if type(self.calibscans) is list:
-                data_input = self.calibscans[int(lencalibs / 2)]
-            else:
-                data_input = self.calibscans.items[int(lencalibs / 2)]
+            data_input = None
+            for _, c in enumerate(self.calib_energies):
+                if c.disabled:
+                    continue
+                else:
+                    data_input = c.data
+                    break
+            if data_input is None:
+                raise Warning("No files are enabled, cannot approximate ROI.")
+                # return
+
             hrois, vrois = approximateROIs(
                 numcrystals,
                 self.mincuts.value(),

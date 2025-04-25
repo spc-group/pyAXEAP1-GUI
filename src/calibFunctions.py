@@ -284,6 +284,8 @@ def approximateROIs(numcrystals, mincuts, maxcuts, scan, points):
         min_width=minwidth,
         # group_buffer=10,
     )
+    if not len(hrois):
+        print("No HROIs")
     hrois = list((h.lo, h.hi) for h in hrois)
 
     to_split = [h for h in hrois if abs(h[1] - h[0]) >= 200]
@@ -296,7 +298,7 @@ def approximateROIs(numcrystals, mincuts, maxcuts, scan, points):
     del to_split
 
     while len(hrois) < numcrystals:
-        maxhroi = 0
+        maxhroi = -100000000
         for i, h in enumerate(hrois):
             if maxhroi < abs(h[1] - h[0]):
                 maxhroi = abs(h[1] - h[0])

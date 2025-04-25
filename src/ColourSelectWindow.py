@@ -33,7 +33,6 @@ class ColourSelect:
     class ColourWindow(QtWidgets.QColorDialog):
         def __init__(self, colour):
             super(ColourSelect.ColourWindow, self).__init__(colour)
-
             self.show()
 
 

@@ -97,6 +97,7 @@ class Spectrum:
 
         self.parent = parent
         self.spectrum = spectrum
+        self.num = num
 
         if i0 is not None:
             if type(i0) is list:

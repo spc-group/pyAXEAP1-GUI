@@ -75,7 +75,10 @@ def calcSpectra(
     """
     energy = []
     i0 = []
-    if dtype == "tif" or dtype == "tiff" or dtype is None:
+
+    if type(file_dir) is core.Scan or type(file_dir) is core.ScanSet:
+        scans = file_dir
+    elif dtype == "tif" or dtype == "tiff" or dtype is None:
         try:
             scans = core.ScanSet.loadFromPath(file_dir)
             if len(scans.items) == 0:
