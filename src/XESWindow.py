@@ -53,7 +53,7 @@ class XESWindow(Window):
         label_style = {"color": "#444", "font-size": "14pt"}
         self.sc.plotItem.getAxis("left").setLabel(text="Signal Counts", **label_style)
         self.sc.plotItem.getAxis("bottom").setLabel(
-            text="Emission Energy", **label_style
+            text="Emission Energy (eV)", **label_style
         )
 
         # mouse movement label
@@ -211,7 +211,7 @@ class XESWindow(Window):
     # loads XES data (currently only able to load from TIF files)
     def loadXES(self):
         if len(self.emaps):
-            self.emap = self.emaps[self.emap_combo.currentIndex()]
+            self.emap = self.emaps[self.emap_combo.currentIndex() // 2]
         elif self.emap is None:
             try:
                 self.emap = self.parent.emap
@@ -530,6 +530,7 @@ class XESWindow(Window):
     def saveDispSpectra(self):
         if not len(self.disp_spectra):
             self.error = ErrorWindow("nodispSpec")
+            return
         self.saveSpectra(self.disp_spectra)
 
     # saves the average spectrum (recalculates before saving)
@@ -538,7 +539,72 @@ class XESWindow(Window):
             self.average_spectra = self.setAverageSpectra()
         except IndexError:
             self.error = ErrorWindow("avgNoSelected")
-        self.saveSpectra(self.average_spectra)
+            return
+
+        spec = self.average_spectra
+
+        dialog = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Spectra",
+            filter=("Excel Spreadsheet (*.xlsx)\nSimple Text Layout (*.csv)"),
+        )
+        if dialog[1] == "Excel Spreadsheet (*.xlsx)":
+            wb = ExWorkbook()
+            ws = wb.active
+
+            lines = [[] for _, _ in enumerate(spec[0])]
+            lines.insert(0, [])
+            lines.insert(1, [])
+            lines[0].append("Average Spectra")
+            lines[0].append("")
+            lines[0].append("")
+            lines[1].append("Emission Energy (eV)")
+            lines[1].append("Counts")
+            lines[1].append("")
+            texts = [
+                [str(spec[0][i]), str(spec[1][i]), ""] for i, _ in enumerate(spec[0])
+            ]
+            for k, item in enumerate(texts):
+                for l in range(3):
+                    lines[k + 2].append(item[l])
+            for i, line in enumerate(lines, 1):
+                for j, item in enumerate(line, 1):
+                    try:
+                        n = float(item)
+                    except Exception:
+                        n = item
+                    ws.cell(i, j).value = n
+            for i in range(int(len(lines[0]) / 3)):
+                ws.merge_cells(
+                    start_row=1,
+                    end_row=1,
+                    start_column=i * 3 + 1,
+                    end_column=i * 3 + 2,
+                )
+                ws.column_dimensions[getColumnLetter(i * 3 + 1)].width = 20
+            wb.save(dialog[0])
+            wb.close()
+
+        elif dialog[1] == "Simple Text Layout (*.csv)":
+            direct = open(dialog[0], "+w")
+            direct.seek(0)
+            direct.truncate()
+            lines = ["" for _, _ in enumerate(spec[0])]
+            lines.insert(0, "")
+            lines.insert(1, "")
+            lines[0] += "Average Spectra" + ",,,"
+            lines[1] += "Emission Energy (eV),Counts,,"
+            texts = [
+                str(spec[0][j]) + "," + str(spec[1][j]) + ",,"
+                for j, _ in enumerate(spec[0])
+            ]
+            for k, string in enumerate(texts):
+                lines[k + 2] += string
+            text = ""
+            for line in lines:
+                text += line + "\n"
+            direct.write(text)
+            direct.close()
 
 
 # creates an XES window when file is run

@@ -198,15 +198,21 @@ class RXESWindow(Window):
         label_style = {"color": "#444", "font-size": "14pt"}
         self.emsc = pg.plot()
         self.emsc.setBackground("w")
-        self.emsc.plotItem.getAxis("left").setLabel(text="Intensity", **label_style)
-        self.emsc.plotItem.getAxis("bottom").setLabel(text="Incident", **label_style)
+        self.emsc.plotItem.getAxis("left").setLabel(text="Signal Counts", **label_style)
+        self.emsc.plotItem.getAxis("bottom").setLabel(
+            text="Incident (eV)", **label_style
+        )
         self.emsc.setFixedSize(300, 300)
 
         # Incident canvas init
         self.incsc = pg.plot()
         self.incsc.setBackground("w")
-        self.incsc.plotItem.getAxis("left").setLabel(text="Intensity", **label_style)
-        self.incsc.plotItem.getAxis("bottom").setLabel(text="Emission", **label_style)
+        self.incsc.plotItem.getAxis("left").setLabel(
+            text="Signal Counts", **label_style
+        )
+        self.incsc.plotItem.getAxis("bottom").setLabel(
+            text="Emission (eV)", **label_style
+        )
         self.incsc.setFixedSize(300, 300)
 
         # RXES data button
@@ -278,7 +284,7 @@ class RXESWindow(Window):
         # number of points to include (squared)
         num_points_label = QtWidgets.QLabel("Rows/Cols:")
         self.num_points = QtWidgets.QLineEdit()
-        self.num_points.setValidator(QtGui.QIntValidator(1, 999))
+        self.num_points.setValidator(QtGui.QIntValidator(1, 9999))
         self.num_points.setText("50")
         self.num_points.setFixedWidth(64)
 
@@ -314,7 +320,7 @@ class RXESWindow(Window):
         label_inc = QtWidgets.QLabel("Incident")
         self.select_inc = QtWidgets.QLineEdit()
         self.select_inc.setDisabled(True)
-        self.em_inc_button = QtWidgets.QPushButton("Run")
+        self.em_inc_button = QtWidgets.QPushButton("Plot")
         self.em_inc_button.clicked.connect(self.calcEmInc)
         self.em_inc_button.setDisabled(True)
 
@@ -346,24 +352,24 @@ class RXESWindow(Window):
 
     # Sets labels and view angle for 3D graph
     def fixax3d(self):
-        self.ax3d.set_xlabel("Incident")
-        self.ax3d.set_ylabel("Emission")
+        self.ax3d.set_xlabel("Incident (eV)")
+        self.ax3d.set_ylabel("Emission (eV)")
         # self.ax3d.set_zlabel("Intensity")
         self.ax3d.view_init(25, 225, 0)
 
     def fixax3dtr(self):
-        self.ax3d.set_xlabel("Incident")
+        self.ax3d.set_xlabel("Incident (eV)")
         self.ax3d.set_ylabel("Transfer")
         # self.ax3d.set_zlabel("Intensity")
         self.ax3d.view_init(25, 225, 0)
 
     # Sets labels for contour map
     def fixax2d(self):
-        self.ax2d.set_xlabel("Incident")
-        self.ax2d.set_ylabel("Emission")
+        self.ax2d.set_xlabel("Incident (eV)")
+        self.ax2d.set_ylabel("Emission (eV)")
 
     def fixax2dtr(self):
-        self.ax2d.set_xlabel("Incident")
+        self.ax2d.set_xlabel("Incident (eV)")
         self.ax2d.set_ylabel("Transfer")
 
     # flips whether or not to normalize
@@ -416,6 +422,7 @@ class RXESWindow(Window):
         except Exception:
             self.incident_energy = self.info_table[0]
             self.i0 = self.info_table[1]
+        self.data_changed = True
 
     # Main function for loading RXES data
     def loadRXES(self):
@@ -541,8 +548,11 @@ class RXESWindow(Window):
                 maxinc = max(s.inc)
             if min(s.inc) < mininc:
                 mininc = min(s.inc)
-        self.select_em.setValidator(QtGui.QIntValidator(int(minem), int(maxem)))
-        self.select_inc.setValidator(QtGui.QIntValidator(int(mininc), int(maxinc)))
+        # self.select_em.setValidator(QtGui.QIntValidator(int(minem), int(maxem)))
+        # self.select_inc.setValidator(QtGui.QIntValidator(int(mininc), int(maxinc)))
+        regexp = QtCore.QRegularExpression("((\d+|\d+-\d+),?)*")
+        self.select_em.setValidator(QtGui.QRegularExpressionValidator(regexp))
+        self.select_inc.setValidator(QtGui.QRegularExpressionValidator(regexp))
         self.em_limits = (minem, maxem)
         self.inc_limits = (mininc, maxinc)
         self.select_em.setDisabled(False)
@@ -674,9 +684,11 @@ class RXESWindow(Window):
 
     # sets data and graphs data all in one (for simpler calling)
     def refresh(self):
-        self.setData()
-        self.graph3dSpectra()
-        self.graph2dSpectra()
+        failed = self.setData()
+        if not failed:
+            self.graph3dSpectra()
+            self.graph2dSpectra()
+            self.setSubLimits()
 
     # This is the 3d graph
     def graph3dSpectra(self):
@@ -718,16 +730,19 @@ class RXESWindow(Window):
         self.sc3d.draw_idle()
 
     # This is the contour map
-    def graph2dSpectra(self):
+    def graph2dSpectra(self, forced=False):
         # skips drawing 2d if it hasn't changed
-        if not (
-            self.data_changed
-            or self.transfer != self.old_2d["use"]["tr"]
-            or self.normalize != self.old_2d["use"]["norm"]
-            or self.ela_remove != self.old_2d["use"]["ela"]
-            or self.use_log != self.old_2d["use"]["log"]
-            or self.colour_mode.currentData() != self.old_2d["col_mode"]
-            or self.colmap_type.currentData() != self.old_2d["colmap_type"]
+        if (
+            not (
+                self.data_changed
+                or self.transfer != self.old_2d["use"]["tr"]
+                or self.normalize != self.old_2d["use"]["norm"]
+                or self.ela_remove != self.old_2d["use"]["ela"]
+                or self.use_log != self.old_2d["use"]["log"]
+                or self.colour_mode.currentData() != self.old_2d["col_mode"]
+                or self.colmap_type.currentData() != self.old_2d["colmap_type"]
+            )
+            and not forced
         ):
             return
 
@@ -741,7 +756,10 @@ class RXESWindow(Window):
             return
 
         x, y, z = [], [], []
-        for _, s in enumerate(self.spectra):
+        for i, s in enumerate(self.spectra):
+            if self.transfer and i < len(self.spectra) - 1:
+                if s.em[-1] > self.spectra[i + 1].em[-1]:
+                    continue
             x.append(s.inc)
             y.append(s.em)
             z.append(s.inte)
@@ -790,67 +808,72 @@ class RXESWindow(Window):
 
     # Get datapoints for Emission and Incident vs Intensity 2D graphs
     def calcEmInc(self):
-        self.error = lambda: ErrorWindow("invalidEmIncRXES")
-        inc = self.select_inc.text()
-        em = self.select_em.text()
+        inc = self.select_inc.text().split(",")
+        em = self.select_em.text().split(",")
         if not (inc or em):
             return
 
         if inc:
-            inc = float(inc)
-            mininc, maxinc = self.inc_limits
-            if not (mininc <= inc <= maxinc):
-                self.error()
-                return
-            del mininc, maxinc
+            inc_data = []
+            for i in inc:
+                current = float(i)
+                mininc, maxinc = self.inc_limits
+                if not (mininc <= current <= maxinc):
+                    print(current, maxinc, mininc)
+                    self.error = ErrorWindow("invalidEmIncRXES")
+                    return
+                del mininc, maxinc
 
-            # Incident Calc
-            try:
-                inc_spectrum = self.spectra[inc]
-            except Exception:
-                ls = None
-                for s in self.spectra:
-                    if s.inc[0] > inc:
-                        if ls is None:
-                            ls = s
-                        break
-                    ls = s
+                # Incident Calc
+                try:
+                    inc_spectrum = self.spectra[current]
+                except Exception:
+                    ls = None
+                    for s in self.spectra:
+                        if s.inc[0] > current:
+                            if ls is None:
+                                ls = s
+                            break
+                        ls = s
 
-                if min(abs(ls.inc[0] - inc), abs(s.inc[0] - inc)) == abs(
-                    s.inc[0] - inc
-                ):
-                    inc_spectrum = s
-                else:
-                    inc_spectrum = ls
+                    if min(abs(ls.inc[0] - current), abs(s.inc[0] - current)) == abs(
+                        s.inc[0] - current
+                    ):
+                        inc_spectrum = s
+                    else:
+                        inc_spectrum = ls
 
-            inc_emission = inc_spectrum.em
-            inc_intensity = inc_spectrum.inte
-            inc_data = (inc_emission, inc_intensity)
+                inc_emission = inc_spectrum.em
+                inc_intensity = inc_spectrum.inte
+                inc_data.append((inc_emission, inc_intensity))
 
         elif not inc:
-            inc_data = None
+            inc_data = []
 
         if em:
-            em = float(em)
-            minem, maxem = self.em_limits
-            if not (minem <= em <= maxem):
-                self.error()
-                return
-            del minem, maxem
+            em_data = []
+            for i in em:
+                current = float(i)
+                minem, maxem = self.em_limits
+                if not (minem <= current <= maxem):
+                    print(current, maxem, minem)
+                    self.error = ErrorWindow("invalidEmIncRXES")
+                    return
+                del minem, maxem
 
-            # Emission Calc
-            em_incident = []
-            em_intensity = []
-            for s in self.spectra:
-                for i, e in enumerate(s.em):
-                    if em - 0.1 <= e <= em + 0.1:
-                        break
-                em_incident.append(s.inc[0])
-                em_intensity.append(s.inte[i])
-            em_data = (em_incident, em_intensity)
+                # Emission Calc
+                em_incident = []
+                em_intensity = []
+                for s in self.spectra:
+                    for j, e in enumerate(s.em):
+                        if current - 0.1 <= e <= current + 0.1:
+                            break
+                    em_incident.append(s.inc[0])
+                    em_intensity.append(s.inte[j])
+                em_data.append((em_incident, em_intensity))
 
         elif not em:
-            em_data = None
+            em_data = []
 
         self.graphEmInc(em_data, inc_data)
         self.save_em_button.setDisabled(False)
@@ -858,12 +881,14 @@ class RXESWindow(Window):
 
     # Graph Emission and Incident vs Intensity 2D graphs
     def graphEmInc(self, em, inc):
-        if em is not None:
+        if em:
             self.emsc.plotItem.clear()
-            self.emsc.plotItem.plot(em[0], em[1], pen=pg.mkPen(color="k", width=2))
-        if inc is not None:
+            for e in em:
+                self.emsc.plotItem.plot(e[0], e[1], pen=pg.mkPen(color="k", width=2))
+        if inc:
             self.incsc.plotItem.clear()
-            self.incsc.plotItem.plot(inc[0], inc[1], pen=pg.mkPen(color="k", width=2))
+            for i in inc:
+                self.incsc.plotItem.plot(i[0], i[1], pen=pg.mkPen(color="k", width=2))
 
     def saveSpectra(self, spectra=None):
         if spectra is None:
@@ -891,7 +916,7 @@ class RXESWindow(Window):
                     lines[0].append("")
                     lines[1].append("Incident Energy (eV)")
                     lines[1].append("Emission Energy (eV)")
-                    lines[1].append("Intensity")
+                    lines[1].append("Signal Counts")
                     lines[1].append("")
                     texts = [
                         [str(spect.inc[j]), str(spect.em[j]), str(spect.inte[j]), ""]
@@ -942,7 +967,9 @@ class RXESWindow(Window):
                     lines[l] += ","
                 for spect in spectra:
                     lines[0] += f"Spectrum {spect.num},,,,"
-                    lines[1] += "Incident Energy (eV),Emission Energy (eV), Intensity,,"
+                    lines[
+                        1
+                    ] += "Incident Energy (eV),Emission Energy (eV), Signal Counts,,"
                     texts = [
                         f"{spect.inc[j]},{spect.em[j]},{spect.inte[j]},,"
                         for j, _ in enumerate(spect.inc)

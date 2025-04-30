@@ -68,7 +68,7 @@ class LoadH5Data(LoadFile):
                 child_node = node[key]
                 if key == "energy":
                     energies.append(child_node)
-                elif key == "I0_ds_v2-net_current":
+                elif key == "IpreKB_ds_v1-net_current":
                     i0s.append(child_node)
                 elif hasattr(child_node, "dtype"):
                     if key == "eiger_image":
@@ -135,7 +135,7 @@ class LoadInfoData(LoadFile):
                 j = 1
                 while not empty:
                     line = ws.cell(i, j).value
-                    if len(line):
+                    if line or line == 0:
                         lines.append(line)
                     else:
                         if i == 1:

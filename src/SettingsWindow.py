@@ -48,7 +48,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # cmap box
         cmap = self.settings["cmap"]
-        cmap_label = QtWidgets.QLabel("Default RXES Colour Map:")
+        cmap_label = QtWidgets.QLabel("Default RXES Contour Map:")
         self.cmap_box = QtWidgets.QComboBox()
         self.cmap_box.addItem("PColor", "pcolor")
         self.cmap_box.addItem("Contour", "contour")
